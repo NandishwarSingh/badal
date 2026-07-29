@@ -626,16 +626,25 @@ badal/
 
 ## 13. Roadmap
 
-| Phase | Weeks | Scope | Done when |
-|---|---|---|---|
-| **0 · Foundation** | 1–2 | Ansible VPS provisioning, Tailscale mesh, Caddy+TLS, Postgres, Garage, restic + first restore drill, ntfy, monitoring. **Run the §11 mail diagnostics.** | `https://badal.<domain>/health` → 200, a backup has been restored and verified |
-| **1 · Spine** | 3–5 | Go API skeleton, auth + device registration, `change_log`, sync cursor, chunked blob store, `badal` CLI | You can `badal push`/`badal pull` a file from the Mac terminal |
-| **2 · Notes** | 6–9 | Automerge, notes API, SwiftUI macOS app (editor, offline, sync, global quick-capture hotkey), web notes UI | **You use it daily.** This milestone decides whether the project survives — reach real daily use fast |
-| **3 · Forge** | 10–12 | Job queue + lease/heartbeat/reaper, forge agent, systemd hardening (§6), Ansible forge playbook, storage replica | Yank the laptop's power mid-job → job completes anyway via re-queue or fallback |
-| **4 · Email → Calendar** | 13–17 | IMAP/Graph ingest, MIME parse, raw archive, attachment OCR routing, DeepSeek extraction + evidence validation, dedupe, proposed-events review inbox, `.ics` URL | Apple Calendar shows university deadlines you confirmed with one tap |
-| **5 · Files & photos** | 18+ | macOS File Provider extension (on-demand files in Finder), photo ingest, thumbnails + CLIP tagging on forge | Finder shows badal as a real drive |
-| **6 · iOS** | — | Apple Developer account, SwiftUI iOS app reusing the Phase 2 package, APNs, Share Sheet, Shortcuts, background refresh | |
-| **7 · Semantic search** | — | Embeddings on forge over notes + mail + files, pgvector, hybrid BM25 + vector, RAG answer endpoint | "Ask my stuff" works |
+Revised 2026-07-30 for the forge move (§5.0) and the storage change (§3.1).
+
+| Phase | Est. | Status | Scope | Done when |
+|---|---|---|---|---|
+| **0 · Foundation** | 2 wk | **~90%** | Tailscale mesh, Caddy+TLS, Postgres+pgvector, Garage S3, restic + verified restore, Mac backup replica, ntfy, SELinux, firewall. Mail diagnostics **done** (§11) | `/health` → 200 ✅ · backup restored and verified ✅ · *remaining: VictoriaMetrics* |
+| **1 · Spine** | 3 wk | next | Go API skeleton, auth + device registration, `change_log` + sync cursor, FastCDC chunked blob store, `badal` CLI | `badal push` / `badal pull` a file from the terminal |
+| **2 · Notes** | 4 wk | | Automerge CRDT, notes API, SwiftUI **macOS** app (editor, offline, sync, global quick-capture hotkey), web notes UI | **You use it daily.** The milestone that decides whether the project survives |
+| **3 · Worker** | 2 wk | | Job queue + lease/heartbeat/reaper, forge agent **on macOS** (launchd, not systemd), OpenRouter fallback routing | Close the laptop mid-job → it completes anyway via requeue or cloud fallback |
+| **4 · Email → Calendar** | 5 wk | | Gmail API ingest, MIME parse, raw archive, OCR routing, DeepSeek extraction + evidence validation, dedupe, proposed-event review inbox, signed `.ics` URL | Apple Calendar shows VIT deadlines you confirmed with one tap |
+| **5 · Files & photos** | 4 wk | ⚠️ | macOS File Provider extension (on-demand files in Finder), photo ingest, thumbnails, CLIP tagging | Finder shows badal as a real drive. **Blocked on §3.1 capacity — photos will not fit in 20 GB** |
+| **6 · iOS** | 3 wk | | Apple Developer account, SwiftUI iOS app reusing the Phase 2 Swift package, APNs, Share Sheet, Shortcuts, background refresh | badal on your phone, natively |
+| **7 · Semantic search** | 3 wk | | Embeddings on the Mac worker over notes + mail + files, pgvector, hybrid BM25 + vector, RAG answer endpoint | "Ask my stuff" works across everything |
+
+**Phase 3 shrank** (was 3 wk): all the systemd hardening — watchdogs, lid/power config,
+auto-WiFi recovery, thermal caps — died with the laptop. A launchd agent on the Mac needs
+none of it.
+
+**Phase 5 is the capacity wall.** Everything before it fits comfortably in 20 GB; photos
+do not. Resolve §3.1 before starting it.
 
 ---
 
