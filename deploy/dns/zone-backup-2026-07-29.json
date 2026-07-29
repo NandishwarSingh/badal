@@ -1,0 +1,1 @@
+[{"name":"www","records":[{"content":"nandishwarsingh.com.","is_disabled":false}],"ttl":300,"type":"CNAME"},{"name":"@","records":[{"content":"\"google-site-verification=g6671RWcjmFPgSClm3aTG43pE-dw2sIxwWgP6pbHph4\"","is_disabled":false}],"ttl":14400,"type":"TXT"}]

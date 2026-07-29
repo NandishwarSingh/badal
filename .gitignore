@@ -1,0 +1,21 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_ed25519*
+secrets/
+deploy/ansible/inventory/*.yml
+!deploy/ansible/inventory/example.yml
+
+# build
+/bin/
+/dist/
+*.o
+.DS_Store
+node_modules/
+.build/
+DerivedData/
+*.xcuserstate
+__pycache__/
