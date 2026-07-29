@@ -90,54 +90,41 @@ ever reads from it to serve a request.
 
 ## 3. VPS services
 
-### 3.1 Blob storage: self-hosted S3, two tiers
+### 3.1 Blob storage: single tier on the VPS, replicated to the Mac
 
-**Decision (user, 2026-07-29): no third-party object storage.** Run S3 on both machines.
+**Revised 2026-07-30.** The original design was two Garage instances — VPS holds recent,
+GPU laptop holds everything. The laptop left the architecture (§5.0), taking the archive
+tier and the offsite backup target with it. Current design:
 
 | Tier | Where | Holds | Size |
 |---|---|---|---|
-| **Hot** | VPS Garage | **recent objects only** | capped ~20 GB of the 50 GB disk |
-| **Archive** | Laptop Garage | **everything — recent *and* old** | full history |
+| **Primary** | VPS Garage `badal-hot` | **everything** — no eviction | capped 20 GB of 50 GB |
+| **Backup replica** | Mac, 50 GB sparse bundle | restic copy of the backup repo | hard 50 GB cap |
 
-Two **independent** single-node Garage instances, not one cluster. Garage replicates
-uniformly across a cluster and cannot express "recent here, everything there", so the
-tiering is driven by `badal-api`:
+**Eviction is disabled and stays disabled.** With no second blob store, evicting an object
+from the VPS would destroy it. The `age > N days → evict` sweep is written into the design
+but must not be enabled until a verified second copy of *blobs* exists. Blob capacity is
+therefore hard-capped at 20 GB until that changes — the first real constraint this system
+will hit.
 
-1. Write goes to **VPS hot** first. Object is immediately durable and servable.
-2. A `replicate` job pushes it to **laptop archive**; on confirmed write (HEAD + checksum
-   match) the row gets `archived_at`.
-3. An eviction sweep removes objects from hot when
-   `age > N days AND archived_at IS NOT NULL AND verify(laptop) == ok`.
+**The Mac replica is a backup, not an archive tier.** It holds restic snapshots of
+Postgres dumps and config, not the object store. It exists so that a total loss of the
+VPS is survivable; it does not extend capacity.
 
-**Invariant: never evict from hot unless the object is verified present on the archive.**
-Eviction is the one operation in this system that can destroy data, so it verifies rather
-than trusts a flag.
+Keep the `ObjectStore` interface in Go regardless, so a future archive target — a wired
+laptop, a Storage Box, B2 — drops in without touching call sites.
 
-**Cold reads degrade, they don't fail.** Requesting an evicted object while the laptop is
-offline returns `202 Accepted` with a queued retrieval, and ntfy fires when it lands. The
-client shows "restoring from archive" rather than an error.
+#### What still needs solving
 
-#### ⚠️ This makes the laptop a single point of failure for your old data
+Blobs have exactly one copy, on one VPS, in one datacenter. Postgres and config are now
+two-copy (VPS + Mac). Before the object store holds anything irreplaceable, one of:
 
-Once an object is evicted from the VPS, the laptop holds **the only copy**. That laptop is
-a single consumer SSD with no redundancy, and it is also the machine deliberately designed
-to reboot itself on crashes and run hot under sustained GPU load. It is the least reliable
-component in the system, holding the only copy of the oldest data. That is one copy —
-not 3-2-1.
-
-Nothing above is blocked on fixing this, but pick one before the archive holds anything
-irreplaceable:
-
-- **A second disk on the laptop** (btrfs/ZFS mirror, or a periodic `rclone sync` to an
-  external USB drive) — cheapest, keeps everything self-hosted, survives one disk death.
-- **Offsite archive backup** — restic to B2 (~$6/TB/mo) for the archive tier only. Breaks
-  the no-third-party rule, but it is the only option that survives fire, theft, or
-  ransomware hitting the house.
-- **Accept the risk explicitly** for classes of data you can regenerate, and keep anything
-  irreplaceable pinned to hot so it never leaves the VPS. A `pinned` flag on the object
-  metadata makes this a per-file decision.
-
-Keep an `ObjectStore` interface in Go regardless, so hot/archive/offsite are swappable.
+- **Wire the GPU laptop up** — it already has a 300 GB `fedora/archive` LV formatted and
+  mounted, waiting. Cheapest path back to a real archive tier; needs an ethernet cable.
+- **Hetzner Storage Box / B2** — ~€4–6/TB/mo, survives fire and theft, which no
+  in-house copy does.
+- **A `pinned` flag** on object metadata so irreplaceable files are never eviction
+  candidates even once eviction is enabled.
 
 ### 3.2 Podman + quadlets, not Docker Compose
 
@@ -222,7 +209,42 @@ For calendar events, email metadata, tasks, settings.
 
 ---
 
-## 5. GPU laptop (`badal-forge`)
+## 5.0 ⚠️ The forge role moved to the MacBook (2026-07-30)
+
+The ASUS/Fedora GPU laptop is **shelved, not deleted**. It repeatedly fell off the network
+— it was tethered to an iPhone Personal Hotspot, which powers down when the phone locks or
+no client is active. Four disconnections in under an hour. A node whose entire purpose is
+being reachable while you are elsewhere cannot live on that link. The machine itself was
+never at fault: it booted cleanly every time and sat at a healthy console login.
+
+Its state is preserved and it can be recovered in an afternoon if it ever gets an ethernet
+cable — see §5.9.
+
+**The MacBook now fills the forge role**, and for compute this is an upgrade:
+
+| | GTX 1650 Mobile (shelved) | **Apple M5 (current)** |
+|---|---|---|
+| Memory for models | 4 GB VRAM | **16 GB unified** |
+| Tensor/matrix units | none (TU117) | Neural Engine + Metal |
+| Local LLMs | not viable | **8–14B run comfortably** (`ollama` already installed) |
+| OCR | RapidOCR / Florence-2 | **Apple Vision framework** — native, no model download, better on messy scans |
+| Transcription | faster-whisper int8 | whisper.cpp / MLX with Metal |
+| CUDA | yes | **no** |
+
+Nothing in the plan requires CUDA, so the loss is theoretical. The 4× jump in model memory
+reverses an earlier conclusion: **local LLM inference is now viable**, where it was ruled
+out on the 1650. OpenRouter stays the default for extraction on cost grounds
+($0.09/1M in), but privacy-sensitive work can now stay on-device.
+
+**The lease protocol absorbs this change for free.** §5.1 was built for a worker that
+vanishes mid-job — claim, 60 s lease, 20 s heartbeat, reaper requeues. A laptop that
+closes its lid is exactly the case it already handles. Swapping which machine claims jobs
+required no design change, which is the payoff for getting that protocol right early.
+
+**What the Mac cannot do** is be always-on. Jobs queue when it sleeps and drain when it
+wakes; anything needing guaranteed latency must fall back to OpenRouter or run on the VPS.
+
+## 5. Worker node (`badal-forge`)
 
 ### 5.1 Job lease protocol
 
@@ -834,9 +856,41 @@ Note: netavark uses the **iptables** backend here (7 `NETAVARK` chains), not nft
 `nft list tables` is not a valid health indicator. Test connectivity functionally
 (`podman exec caddy wget -qO- http://ntfy:80/v1/health`) instead.
 
+### Backup replica on the Mac — live, and verified restorable
+
+Phase 0's biggest gap is closed: backups no longer live only on the disk they protect.
+
+- **50 GB APFS sparse bundle** at `~/badal-archive.sparsebundle` — hard cap, but only
+  consumes what it uses (34 MB today). No sudo or disk repartitioning needed.
+- Garage's S3 API now also binds the **tailnet** address (`100.73.64.48:3900`) alongside
+  loopback, so the Mac can pull directly. Safe: the tailnet is authenticated and
+  encrypted, and `tailscale0` is already in firewalld's trusted zone.
+- Replica repo initialised with `--copy-chunker-params` from the source, so copies
+  deduplicate against the origin instead of re-chunking.
+- **`restic check --read-data` passes with no errors**, and a restore from the *Mac* copy
+  produced a valid `PGDMP` dump.
+- `com.badal.replicate` launchd agent runs daily at 21:30, auto-mounts the bundle, skips
+  cleanly when the tailnet is down, then prunes 7d/4w/12m.
+
+Postgres and config are now **two copies on independent hardware**. Blobs are still one.
+
+### `badal-forge` (ASUS/Fedora) — shelved, recoverable
+
+Preserved state, per §5.0: on the tailnet as `100.88.36.28`, hostname set, SSH key-only
+(`00-badal.conf` — Fedora's `01-permitrootlogin.conf` sets `PermitRootLogin yes` and wins
+on first-match, so a `00-` prefix is required), firewall down to `dhcpv6-client` on WiFi
+with `tailscale0` trusted, root grown 15 GB → 80 GB, and a **300 GB `fedora/archive` LV
+formatted and mounted** at `/var/lib/badal/archive`.
+
+Outstanding if it ever returns: nouveau owns the GPU (`NVRM: GPU 0000:01:00.0 is already
+bound to nouveau`) and RPMFusion's blacklist file was never installed. Fix is one atomic
+operation — write `/etc/modprobe.d`, `grubby --update-kernel=ALL
+--args="rd.driver.blacklist=nouveau modprobe.blacklist=nouveau"`, `dracut --regenerate-all`,
+reboot. Also delete `/etc/modules-load.d/badal-nvidia.conf`, which currently forces the
+nvidia module to load at boot while nouveau still owns the device.
+
 ### Remaining in Phase 0
-iPhone + laptop onto the tailnet · VictoriaMetrics · laptop Garage archive tier +
-`restic copy` offsite
+iPhone onto the tailnet · VictoriaMetrics · a second copy of **blobs** (see §3.1)
 
 ---
 
