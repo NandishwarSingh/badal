@@ -800,9 +800,43 @@ policy work, and it works for every tailnet device rather than only Tailscale SS
 > **Do not run this until a second device is on the tailnet and verified**, or the only
 > path back in is Hostinger recovery mode.
 
+### Port 22 is now tailnet-only
+
+`nandishwars-macbook-air` (`100.127.18.18`) joined the tailnet, and the connection to
+badal-core is **direct over IPv6** (`[2a02:4780:63:c00c::1]:41641`), not DERP-relayed.
+
+With a second device verified, `ssh` was removed from the public firewalld zone:
+
+```
+public zone:  http https          # 22 no longer answers from the internet
+trusted zone: tailscale0
+```
+
+Verified from outside: **22 closed, 80/443 open.** Local alias `badal-core` now points at
+`100.73.64.48`; `badal-public` is kept as a documented emergency route that only works if
+`ssh` is re-added to the public zone.
+
+### ⚠️ `firewall-cmd --reload` silently breaks container networking
+
+Removing `ssh` from the public zone took ntfy down with a 502. Every container was
+healthy — **the firewalld reload flushed netavark's rules**, so podman's DNS at
+`10.89.0.1` became unreachable and Caddy could no longer resolve `ntfy`. Nothing logs an
+error; the containers just stop being able to find each other.
+
+This had happened on *every* earlier reload too, but each was followed by a container
+restart, which masked it.
+
+Fix is `podman network reload --all`. Made automatic via **`badal-fw-watch.service`**,
+which watches firewalld's `org.fedoraproject.FirewallD1.Reloaded` D-Bus signal and
+reinstates the rules. Confirmed firing in the journal on two consecutive reloads.
+
+Note: netavark uses the **iptables** backend here (7 `NETAVARK` chains), not nftables — so
+`nft list tables` is not a valid health indicator. Test connectivity functionally
+(`podman exec caddy wget -qO- http://ntfy:80/v1/health`) instead.
+
 ### Remaining in Phase 0
-Mac + laptop + iPhone onto the tailnet · close port 22 publicly · VictoriaMetrics ·
-laptop Garage archive tier + `restic copy` offsite
+iPhone + laptop onto the tailnet · VictoriaMetrics · laptop Garage archive tier +
+`restic copy` offsite
 
 ---
 
