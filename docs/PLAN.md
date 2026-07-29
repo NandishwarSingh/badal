@@ -1,929 +1,379 @@
 # badal — Personal Cloud Platform
 
-**Status:** planning · **Last updated:** 2026-07-29
+**Revision 2** · 2026-07-30 · built on Phase 0 as deployed
 
-A self-hosted personal cloud: notes, files, email intelligence, and calendar, running
-across an always-on VPS and an intermittent GPU laptop, with native Apple clients.
+A self-hosted personal cloud: notes as a knowledge graph, files, email intelligence, and
+calendar — across an always-on VPS and an intermittent Mac worker, delivered as one PWA.
 
 ---
 
-## 1. Decisions already made
+## 1. Decisions of record
 
-| Decision | Choice | Why |
+| Decision | Choice | Date |
 |---|---|---|
-| Client stack | SwiftUI multiplatform (iOS + macOS) + web PWA | Two main devices are Apple; unlocks File Provider, Share Sheet, Shortcuts, Widgets |
-| Build depth | Hybrid — custom apps, boring infra | Own the product surface, rent the plumbing |
-| iOS timing | Deferred — macOS + web first | No Apple Developer account yet |
-| University mail | Unknown — see §11 diagnostics | Biggest open feasibility risk |
-| Server language | **Go** (recommended) | Single static binary, low RAM on a small VPS, strong I/O concurrency, same language for the laptop agent and CLI |
-| Client language | **Swift** | Shared package across macOS and (later) iOS |
+| Clients | **PWA everywhere** — installed on iOS + Android, browser on macOS. No native apps | Jul 30 |
+| Server language | Go (single static binary, low RAM) | Jul 29 |
+| System of record | Postgres 17 + pgvector | Jul 29 |
+| Knowledge graph | **SurrealDB** — notes graph, links, embeddings | Jul 30 |
+| Blob store | Garage S3 on VPS (hot) → Mac bundle (archive) | Jul 30 |
+| Eviction | **Enabled**, VPS → Mac, 90-day window | Jul 30 |
+| Worker | **MacBook Air M5 only.** No cloud OCR/ASR | Jul 30 |
+| Text extraction | OpenRouter `deepseek/deepseek-v4-flash` (text-only, $0.09/1M) | Jul 29 |
+| VPS size | Hostinger KVM 1 — 1 vCPU / 4 GB / 50 GB, unchanged | Jul 30 |
+| Mail | Google Workspace (`vitstudent.ac.in`) → Gmail API | Jul 29 |
 
-Two languages total: Go for everything server-side and system-side, Swift for clients.
+### Hardware
 
-### Confirmed hardware (verified 2026-07-29)
-
-| | badal-core (VPS) | badal-forge (laptop) |
-|---|---|---|
-| Provider / model | Hostinger KVM 1, id `1367060` | personal laptop |
-| CPU | **1 vCPU** | — |
-| RAM | 4 GB | TBD |
-| Disk | **50 GB** | TBD |
-| GPU | — | **GTX 1650, 4 GB VRAM (TU117)** |
-| OS | **CentOS Stream 9** | **Fedora Server** |
-| Network | `200.141.2.137` / `2a02:4780:63:c00c::1`, 30 ms RTT | home LAN, intermittent |
-
-Domain `nandishwarsingh.com` (Hostinger DNS). Timezone **Asia/Kolkata (IST)**.
-
-**Three consequences, each of which changed the plan below:**
-
-1. **1 vCPU / 50 GB is tight.** The service list in §3 was trimmed, and blob storage moved
-   off the VPS entirely (§3.1).
-2. **Both machines are RPM/SELinux/systemd.** CentOS Stream 9 and Fedora are the same
-   family — so: **podman + quadlets, not Docker Compose** (§3.2). One mental model, one
-   set of SELinux quirks, and systemd supervises containers directly, which composes with
-   the watchdog design in §6.3.
-3. **The GTX 1650 is not an LLM GPU** (§5.2). 4 GB VRAM and no tensor cores. It is a very
-   capable OCR / embeddings / Whisper box, and that is what it should be used for.
-
----
-
-## 2. Topology
-
-```
-                      ┌─────────────────────────────┐
-   Internet ─── 443 ──▶│  badal-core  (VPS)          │
-                      │  always on · source of truth │
-                      │  Caddy · Postgres · Garage   │
-                      │  badal-api · web PWA · ntfy  │
-                      └──────┬───────────────┬───────┘
-                             │ tailnet       │ tailnet
-                ┌────────────▼──────┐  ┌─────▼──────────────┐
-                │ badal-forge       │  │ badal-mac (MacBook)│
-                │ GPU laptop        │  │ badal-web (browser)│
-                │ INTERMITTENT      │  │ badal-ios (later)  │
-                │ worker + replica  │  └────────────────────┘
-                └───────────────────┘
-```
-
-### The one rule that makes offline-tolerance work
-
-**The VPS must never call the laptop.** The laptop is a *worker that leases jobs* — it
-pulls work, it is never a service on a request path. Offline tolerance then holds by
-construction, not by error handling scattered through the codebase.
-
-Corollary: the laptop's storage is a **replica**, never a primary. Nothing on the VPS
-ever reads from it to serve a request.
-
-### Network
-
-- **Tailscale** mesh across VPS, laptop, MacBook, phone. Handles CGNAT/NAT traversal for
-  the home laptop, gives MagicDNS names (`badal-forge`), ACLs, and Tailscale SSH so the
-  laptop never exposes port 22.
-- VPS is the only machine with public ports: **443** (Caddy) and 80 (redirect only).
-- DNS: point `badal.<domain>` at the VPS **DNS-only** (no Cloudflare proxy) — the free
-  proxy tier caps request bodies at 100 MB, which breaks large file uploads.
-- Caddy handles Let's Encrypt automatically.
-- Migration path: swap Tailscale for self-hosted **Headscale** later if you want zero
-  third-party dependency. Same clients, same config, drop-in.
-
----
-
-## 3. VPS services
-
-### 3.1 Blob storage: single tier on the VPS, replicated to the Mac
-
-**Revised 2026-07-30.** The original design was two Garage instances — VPS holds recent,
-GPU laptop holds everything. The laptop left the architecture (§5.0), taking the archive
-tier and the offsite backup target with it. Current design:
-
-| Tier | Where | Holds | Size |
+| | badal-core (VPS) | badal-mac (worker + client) | badal-forge (shelved) |
 |---|---|---|---|
-| **Primary** | VPS Garage `badal-hot` | **everything** — no eviction | capped 20 GB of 50 GB |
-| **Backup replica** | Mac, 50 GB sparse bundle | restic copy of the backup repo | hard 50 GB cap |
+| CPU | 1 vCPU | Apple M5, 10 core | Ryzen 5 4600H, 12 thread |
+| RAM | 4 GB | 16 GB unified | 7.2 GB |
+| Disk | 50 GB | 261 GB free | 80 GB root + 300 GB archive LV |
+| GPU | — | M5 Neural Engine / Metal | GTX 1650 4 GB |
+| Net | `100.73.64.48`, public 443 | `100.127.18.18` | `100.88.36.28`, offline |
+| OS | CentOS Stream 9 | macOS | Fedora 44 |
 
-**Eviction is disabled and stays disabled.** With no second blob store, evicting an object
-from the VPS would destroy it. The `age > N days → evict` sweep is written into the design
-but must not be enabled until a verified second copy of *blobs* exists. Blob capacity is
-therefore hard-capped at 20 GB until that changes — the first real constraint this system
-will hit.
-
-**The Mac replica is a backup, not an archive tier.** It holds restic snapshots of
-Postgres dumps and config, not the object store. It exists so that a total loss of the
-VPS is survivable; it does not extend capacity.
-
-Keep the `ObjectStore` interface in Go regardless, so a future archive target — a wired
-laptop, a Storage Box, B2 — drops in without touching call sites.
-
-#### What still needs solving
-
-Blobs have exactly one copy, on one VPS, in one datacenter. Postgres and config are now
-two-copy (VPS + Mac). Before the object store holds anything irreplaceable, one of:
-
-- **Wire the GPU laptop up** — it already has a 300 GB `fedora/archive` LV formatted and
-  mounted, waiting. Cheapest path back to a real archive tier; needs an ethernet cable.
-- **Hetzner Storage Box / B2** — ~€4–6/TB/mo, survives fire and theft, which no
-  in-house copy does.
-- **A `pinned` flag** on object metadata so irreplaceable files are never eviction
-  candidates even once eviction is enabled.
-
-### 3.2 Podman + quadlets, not Docker Compose
-
-Both machines are RPM/SELinux/systemd. Quadlets (`.container` files that systemd
-generates units from) mean containers are ordinary systemd services: `Restart=always`,
-`WatchdogSec`, dependency ordering, and journald logging all work natively — the same
-mechanisms §6.3 uses for crash recovery. No daemon, rootless where possible.
-
-### 3.3 Service list (trimmed for 1 vCPU / 4 GB)
-
-| Service | Choice | Est. RAM | Notes |
-|---|---|---|---|
-| Reverse proxy / TLS | Caddy | ~30 MB | Automatic Let's Encrypt |
-| Metadata store | Postgres 17 | ~512 MB | Tune `shared_buffers=512MB`, `max_connections=40` |
-| Blob store | **Garage** (self-hosted S3, hot tier) | ~150 MB | See §3.1 |
-| Queue + pubsub | **Postgres** (`SKIP LOCKED` + `LISTEN/NOTIFY`) | 0 | No NATS. For one user it will never be the bottleneck |
-| API | `badal-api` (Go monolith) | ~80 MB | Single static binary |
-| Web | SvelteKit PWA | 0 | Prebuilt static, served by Caddy — no Node at runtime |
-| Push | self-hosted **ntfy** | ~20 MB | §9 |
-| Metrics | **VictoriaMetrics single** + `vmalert` | ~100 MB | **Grafana dropped** — too heavy here. Query via Explore from your Mac, or run Grafana locally against the remote datasource |
-| Backups | restic (systemd timer) | transient | §10 |
-
-Leaves ~2 GB headroom. **Add 2 GB of swap** anyway — cheap insurance against an OOM kill
-on a 1-vCPU box where one bad query can spike memory.
+Domain `nandishwarsingh.com` · timezone **Asia/Kolkata** · servers log in UTC.
 
 ---
 
-## 4. Sync engine
+## 2. Why PWA, and what it costs
 
-There are **three different sync problems** here and they need three different
-mechanisms. Trying to solve all of them with one is the classic failure mode.
+One SvelteKit codebase serves the browser on macOS and installs to the home screen on iOS
+and Android. This removes the Apple Developer account, the App Store, TestFlight, native
+build tooling, and a whole second language from the project.
 
-### 4.1 The backbone: `change_log`
+**What works on iOS PWAs** (16.4+, home-screen installed):
 
-Every mutation to any entity appends one row:
+- **Web Push** — real push notifications, no APNs, no $99/yr
+- Service worker + IndexedDB offline
+- `getUserMedia` for audio recording, `<input capture>` for camera
 
-```sql
-change_log(
-  seq         bigserial primary key,   -- monotonic cursor
-  entity_type text,                    -- 'note' | 'event' | 'file' | ...
-  entity_id   uuid,
-  op          text,                    -- 'upsert' | 'delete'
-  actor_device uuid,
-  hlc         text,                    -- hybrid logical clock
-  created_at  timestamptz
-)
-```
+**What does not, and the workaround:**
 
-Clients hold a `since_seq` cursor and call `GET /sync?since=N`. Realtime is a WebSocket
-that only ever says *"new seq available, come pull"* — **the socket is a doorbell, not a
-data channel.** This makes reconnection, missed messages, and cold start all the same
-code path, and it is dramatically easier to get right than streaming deltas.
-
-### 4.2 Notes → CRDT (Automerge)
-
-- **Automerge**, not Yjs. Automerge has a Rust core with real Swift *and* Go bindings;
-  Yjs would drag you into JavaScript on the client, which conflicts with the SwiftUI
-  decision.
-- Server stores the Automerge document binary plus an append-only op log. It acts as a
-  relay and persistence layer and does not need to interpret content.
-- Server also materialises plain text into Postgres for full-text search (`tsvector`),
-  and later embeddings.
-
-### 4.3 Records → server-authoritative + client outbox
-
-For calendar events, email metadata, tasks, settings.
-
-- Reads: pull via the change feed.
-- Writes: optimistic concurrency (`If-Match: <version>`). Offline writes queue in a local
-  **outbox** and replay on reconnect.
-- Conflicts (rare for one user) resolve last-writer-wins by HLC.
-
-### 4.4 Files → content-addressed chunking
-
-- Chunk with **FastCDC** (content-defined, ~1–4 MB average), hash each chunk with **BLAKE3**.
-- A file = ordered list of chunk hashes + metadata. Deduplication and delta-sync both fall
-  out for free.
-- Upload flow: `POST /chunks/probe` with the hash list → server returns which it's missing
-  → client uploads only those → client commits the manifest atomically.
-- Chunks in Garage, manifests in Postgres.
-- This is how restic/borg/Dropbox work. It is not much code and it is the right call.
-
----
-
-## 5.0 ⚠️ The forge role moved to the MacBook (2026-07-30)
-
-The ASUS/Fedora GPU laptop is **shelved, not deleted**. It repeatedly fell off the network
-— it was tethered to an iPhone Personal Hotspot, which powers down when the phone locks or
-no client is active. Four disconnections in under an hour. A node whose entire purpose is
-being reachable while you are elsewhere cannot live on that link. The machine itself was
-never at fault: it booted cleanly every time and sat at a healthy console login.
-
-Its state is preserved and it can be recovered in an afternoon if it ever gets an ethernet
-cable — see §5.9.
-
-**The MacBook now fills the forge role**, and for compute this is an upgrade:
-
-| | GTX 1650 Mobile (shelved) | **Apple M5 (current)** |
-|---|---|---|
-| Memory for models | 4 GB VRAM | **16 GB unified** |
-| Tensor/matrix units | none (TU117) | Neural Engine + Metal |
-| Local LLMs | not viable | **8–14B run comfortably** (`ollama` already installed) |
-| OCR | RapidOCR / Florence-2 | **Apple Vision framework** — native, no model download, better on messy scans |
-| Transcription | faster-whisper int8 | whisper.cpp / MLX with Metal |
-| CUDA | yes | **no** |
-
-Nothing in the plan requires CUDA, so the loss is theoretical. The 4× jump in model memory
-reverses an earlier conclusion: **local LLM inference is now viable**, where it was ruled
-out on the 1650. OpenRouter stays the default for extraction on cost grounds
-($0.09/1M in), but privacy-sensitive work can now stay on-device.
-
-**The lease protocol absorbs this change for free.** §5.1 was built for a worker that
-vanishes mid-job — claim, 60 s lease, 20 s heartbeat, reaper requeues. A laptop that
-closes its lid is exactly the case it already handles. Swapping which machine claims jobs
-required no design change, which is the payoff for getting that protocol right early.
-
-**What the Mac cannot do** is be always-on. Jobs queue when it sleeps and drain when it
-wakes; anything needing guaranteed latency must fall back to OpenRouter or run on the VPS.
-
-## 5. Worker node (`badal-forge`)
-
-### 5.1 Job lease protocol
-
-```sql
-jobs(
-  id uuid, kind text, payload jsonb, state text,
-  priority int, capabilities text[],
-  lease_owner uuid, lease_expires_at timestamptz,
-  attempts int, max_attempts int,
-  result jsonb, error text, created_at timestamptz
-)
-```
-
-1. Agent long-polls `POST /jobs/claim {capabilities:["gpu","ocr","whisper","embed"]}`.
-2. Claim is `UPDATE ... FOR UPDATE SKIP LOCKED` setting `lease_expires_at = now() + 60s`.
-3. Agent **heartbeats every 20 s** to extend the lease.
-4. A reaper on the VPS re-queues any job whose lease expired.
-
-Pull the laptop's power mid-job → the job is back in the queue within 60 seconds.
-No orphaned work, no manual intervention, no special-case code.
-
-### 5.2 Every job kind declares a fallback
-
-| Job kind | Primary | Fallback when forge is offline |
-|---|---|---|
-| `ocr` / `vlm` | forge (DeepSeek-OCR or a small VLM) | OpenRouter vision model |
-| `embed` | forge | **defer** — search index lags, nothing breaks |
-| `transcribe` | forge (Whisper) | defer, or Groq Whisper (cheap) |
-| `llm-extract` | **always OpenRouter** | n/a |
-| `thumbnail` / `transcode` | forge | CPU on VPS (slow but fine) |
-
-### 5.2b What a GTX 1650 can actually do
-
-The 1650 is TU117: **4 GB VRAM, ~896 CUDA cores, and no tensor cores.** The missing tensor
-cores matter — FP16/INT8 quantisation buys far less speedup here than on an RTX card. 4 GB
-is the binding constraint on everything.
-
-This settles the local-LLM question conclusively. DeepSeek V4 Flash is 284 B parameters
-(13 B active); nothing in that class is running on this card. And at **$0.09 / $0.18 per
-1M tokens**, ~100 emails/day costs **well under $1/month**. There is no case for local
-text inference — route `llm-extract` to OpenRouter always.
-
-What the card *is* genuinely good for:
-
-| Workload | Model | VRAM | Verdict |
-|---|---|---|---|
-| **Printed-text OCR** | RapidOCR / PaddleOCR | <1 GB | **Primary OCR path.** Fast, accurate on printed text, which is most university mail |
-| **Layout / scene VLM** | Florence-2-base (0.23 B) or large (0.77 B) | 1–2 GB | Captioning, grounding, messy scans |
-| **Harder VLM** | Moondream2 (~1.8 B) | ~3.5 GB fp16 | Fits, but tight. Use only when OCR is insufficient |
-| **Embeddings** | bge-small / bge-base-en-v1.5 | <1 GB | Excellent fit — fast, batches well. Real cost and latency win over cloud |
-| **Image tagging / search** | CLIP ViT-B/32 | <1 GB | Trivial |
-| **Transcription** | faster-whisper `small` int8 | ~1 GB | Comfortable. `medium` int8 (~1.5 GB) also fits |
-| **Thumbnails / transcode** | NVENC + ffmpeg | — | Note: original TU117 1650 has the older Volta-gen NVENC (no B-frames). GDDR6 revisions have Turing NVENC |
-
-**DeepSeek-OCR is dropped** from the original plan — ~3 B params won't fit comfortably in
-4 GB, and without tensor cores an INT4 build wouldn't be fast enough to be worth it.
-RapidOCR → Florence-2 → cloud VLM is the right escalation ladder.
-
-So the laptop's role is: **OCR, embeddings at bulk, Whisper, image processing, and batch
-backfills.** All of which are exactly the workloads where per-token cloud cost and
-round-trip latency actually add up.
-
-### 5.3 Storage replica
-
-Run a daemon that pulls a full copy of the object store (Garage replica, or `rclone sync`
-on a schedule). Gives you a free second copy in a different failure domain, plus fast
-local reads for compute jobs. If it's offline it just catches up later.
-
----
-
-## 6. Laptop system software
-
-**Fedora Server**, headless. All of this belongs in an Ansible playbook under
-`deploy/ansible/forge.yml` so the box is reproducible.
-
-### 6.0 ⚠️ Three Fedora-specific traps
-
-**1. Secure Boot + `akmod-nvidia` will silently kill your GPU.**
-The NVIDIA driver comes from RPMFusion as an akmod that rebuilds on every kernel update.
-Under Secure Boot, an unsigned freshly-built module **refuses to load** — so after a
-routine kernel update the box boots fine, `nvidia-smi` fails, and every GPU job starts
-failing for no visible reason. On a headless machine you will not notice for days.
-
-Fix, once: generate and enroll a MOK key (`kmodgenca` + `mokutil --import`, which needs
-one interactive reboot at the console — do this while the laptop is still on your desk),
-and configure akmods to sign automatically. Then add a **post-boot verification job**:
-run `nvidia-smi`, and if it fails, report the node as GPU-incapable and fire an ntfy alert
-rather than accepting GPU jobs it cannot run.
-
-**2. Fedora's ~13-month lifecycle means a major upgrade every year** on a box you want to
-never touch. Mitigate: `dnf-automatic` in `security` mode with `exclude=kernel*` so
-unattended patching never swaps the kernel out from under the signed NVIDIA module.
-Schedule kernel updates deliberately, while you have physical access.
-*(If this box ever becomes truly set-and-forget, Rocky/Alma 10 would be the better OS —
-but Fedora's newer kernels and Mesa are genuinely nicer for GPU work, so it's a reasonable
-trade to make knowingly.)*
-
-**3. SELinux is enforcing.** It will block the agent from writing outside expected
-contexts and break container bind mounts. Do **not** set it permissive — instead label
-deliberately: `semanage fcontext -a -t container_file_t "/var/lib/badal(/.*)?"` and use
-`:Z` on podman volume mounts. Budget an afternoon for this; the same knowledge applies to
-the CentOS Stream VPS.
-
-### 6.1 Auto power-on when AC is connected
-
-This is **firmware, not OS**. Check BIOS/UEFI for *"Restore on AC Power Loss"* / *"AC
-Recovery"* / *"Wake on AC"* → set to **Power On**. Common on ThinkPads and desktops,
-often absent on consumer laptops.
-
-If the BIOS doesn't expose it, in order of preference:
-
-1. **RTC wake alarm** (`rtcwake`) — schedule daily wakes at fixed times. Combined with
-   "never suspend on AC," covers most of the need. Works from S3 sleep, not from full off.
-2. **Wake-on-LAN** — `ethtool -s eth0 wol g` + enable in BIOS. Caveat: a magic packet must
-   originate on the same L2 segment, so **the VPS cannot send it directly**. Needs a small
-   always-on device on the home LAN (Raspberry Pi Zero W, ~$15) as a relay, or router
-   support.
-3. **Smart plug** — cut and restore power, combined with BIOS "Power On" if available.
-
-### 6.2 Never sleep on AC
-
-`/etc/systemd/logind.conf`:
-```ini
-HandleLidSwitch=suspend                 # still sleeps on battery
-HandleLidSwitchExternalPower=ignore     # stays awake on AC, lid closed
-HandleLidSwitchDocked=ignore
-IdleAction=ignore
-```
-If you want it to *never* sleep: `systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target`.
-
-### 6.3 Restart on crash — three layers
-
-| Layer | Mechanism |
+| Limitation | Workaround |
 |---|---|
-| Service dies | systemd `Restart=always`, `RestartSec=5`, `StartLimitIntervalSec=0` |
-| Service hangs | systemd `WatchdogSec=30` + agent calls `sd_notify(WATCHDOG=1)` |
-| Kernel hangs | hardware watchdog: `/etc/systemd/system.conf` → `RuntimeWatchdogSec=30`, `RebootWatchdogSec=10m` |
-| Kernel panic | `kernel.panic=10` in sysctl → auto-reboot after 10 s |
+| No Background Sync API on Safari | Sync on app open + Web Push wake. Nothing syncs while closed |
+| No Share Target on iOS (Android has it) | iOS Shortcut posting to the API; Share Target on Android |
+| IndexedDB evicted after ~7 days unused | Home-screen install is far more persistent; server is the source of truth anyway |
+| No Finder/File Provider integration | WebDAV endpoint that macOS can mount natively (§8) |
 
-Add boot-loop protection: if the agent fails to reach the VPS on 3 consecutive boots,
-stop retrying and fire an alert rather than thrashing.
-
-### 6.4 Auto-connect WiFi + connectivity watchdog
-
-- NetworkManager: `connection.autoconnect yes`, `connection.autoconnect-retries 0` (infinite).
-- **Prefer Ethernet** as primary with WiFi as fallback via connection priority — one less
-  failure mode.
-- Escalating watchdog on a 60 s systemd timer:
-  ```
-  ping tailnet/VPS
-    3 failures  → nmcli con down/up
-    6 failures  → systemctl restart NetworkManager
-   10 failures  → systemctl restart tailscaled
-   20 failures  → reboot
-  ```
-
-### 6.5 ⚠️ Disk encryption vs unattended boot
-
-If the disk is LUKS-encrypted, **every unattended reboot hangs at the passphrase prompt** —
-which silently defeats the entire auto-restart design. You will discover this during your
-first remote crash, at the worst possible time.
-
-Pick one, deliberately:
-- (a) No FDE on this box; encrypt only a data partition that the agent unlocks after boot.
-- (b) **TPM-bound unlock**: `systemd-cryptenroll --tpm2-device=auto` — recommended.
-- (c) `dropbear-initramfs` for remote SSH unlock (still manual).
-
-### 6.6 Thermals
-
-A laptop pinned at 100 % GPU with the lid closed will cook itself.
-- Cap power: `nvidia-smi -pl <watts>`.
-- The agent must poll temperature and **refuse GPU jobs above a threshold** (e.g. 85 °C),
-  reporting itself as capacity-unavailable rather than failing jobs.
-- Physically: prop the lid or use a vertical stand.
-
-### 6.7 Don't lock yourself out
-
-If Tailscale itself dies you have no access. Timer: tailnet unreachable 10 min → restart
-`tailscaled`; 20 min → reboot. (Covered by §6.4's escalation.)
+**The honest trade:** offline-while-closed sync is gone. For notes and capture — where you
+open the app to use it — this barely matters. It would matter for a Dropbox-style always-
+syncing folder, which is why §8 uses WebDAV rather than pretending a PWA can do it.
 
 ---
 
-## 7. Email → AI → Calendar
-
-### 7.1 Pipeline
+## 3. Storage and eviction
 
 ```
-IMAP IDLE (or Graph delta poll)
-  → raw MIME archived to Garage, immutable, forever
-  → MIME parse: headers, text/plain, text/html, attachments
-  → attachments:  PDF → pdftotext (fast path)
-                  images/scans → OCR|VLM job → forge, else OpenRouter vision
-  → normalised text bundle
-  → DeepSeek V4 Flash via OpenRouter, structured JSON output
-  → validate → dedupe → write events as `proposed`
-  → notify (ntfy) → user confirms in review inbox
+        upload
+          │
+          ▼
+   ┌──────────────┐   replicate job    ┌────────────────────────┐
+   │ VPS Garage   │ ─────────────────► │ Mac /badal-archive/    │
+   │ badal-hot    │                    │   blobs/   ← archive   │
+   │ 30 GB cap    │ ◄───── restore ─── │   restic/  ← backups   │
+   └──────────────┘                    │ 150 GB sparse bundle   │
+          │                            └────────────────────────┘
+          └── evict at 90d, ONLY if verified present on Mac
 ```
 
-### 7.2 Five things that decide whether this feature survives
+### The eviction contract
 
-**1. Never auto-write low-confidence events.**
-Extracted events land in `state = 'proposed'` and surface in a review inbox
-("3 dates found this week — confirm?"). One-tap confirm. Once you've confirmed a few
-weeks' worth, auto-confirm high-confidence extractions from known senders.
-Without this, your calendar fills with garbage within a month, you stop trusting it, and
-the whole module is dead weight.
+Eviction is the only operation in badal that can destroy data. It runs as a job with four
+preconditions, **all** required:
 
-**2. Archive raw MIME forever.**
-Storage is cheap. This lets you re-run extraction with a better model or a better prompt
-six months from now without re-fetching anything. It is the single highest-value thing to
-get right on day one.
+1. Object age > **90 days** (long, because the archive is intermittent)
+2. `archived_at IS NOT NULL`
+3. Live verification: `HEAD` on the Mac copy **and** BLAKE3 checksum match
+4. Object is not `pinned`
 
-**3. Require an `evidence` field.**
-The model must return a verbatim quoted span from the source for every extracted date.
-You then assert that span actually appears in the email and reject the extraction if it
-doesn't. Cheap, mechanical, and kills most hallucinated dates.
+Fail any one and the object stays. The flag is never trusted on its own — a stale
+`archived_at` after a Mac disk failure would otherwise authorise deletion.
 
-```json
-{
-  "events": [{
-    "title": "...", "starts_at": "2026-08-14T15:00:00+05:30", "ends_at": "...",
-    "all_day": false, "location": "...",
-    "kind": "exam|deadline|class|event|meeting",
-    "confidence": 0.0,
-    "evidence": "verbatim span from the email"
-  }],
-  "actions": [{"what": "...", "due_at": "...", "confidence": 0.0}],
-  "summary": "...", "importance": 0.0
-}
-```
+### Cold reads degrade, never fail
 
-**4. Timezones and relative dates.**
-University mail says *"Friday 3pm"* with no date and no timezone. Pass the email's
-`received_at`, your timezone, and the institution's timezone into the prompt, and require
-absolute ISO-8601 output. **Resolve relative dates against `received_at`, never `now()`** —
-otherwise a re-run months later silently produces different answers.
+Requesting an evicted object while the Mac is offline returns **`202 Accepted`** with a
+queued retrieval. The PWA shows *"restoring from archive"* and a Web Push fires when it
+lands. This path is not an edge case here — the Mac is a laptop, so it is the normal case
+for anything older than 90 days.
 
-**5. Idempotency.**
-Key extractions on `(message_id, extraction_version)`. Re-running after a prompt change
-must produce a new *version* you can diff, not duplicate events.
+### ⚠️ Evicted blobs have exactly one copy
 
-### 7.3 Boundaries
+Once evicted, the Mac holds the only copy. Lose or wipe the Mac and that data is gone —
+the restic replica backs up Postgres and config, **not** the blob archive.
 
-- **Read-only IMAP initially.** No SMTP send until the read path is boring and trusted.
-- Log every model call: prompt version, tokens, cost, latency, result. Lets you A/B prompt
-  changes and answer "why did this event appear?"
+Mitigations that cost nothing and are in the plan:
+
+- **`pinned` flag** — mark anything irreplaceable and it never leaves the VPS.
+- **90-day window** — recent data is always two-copy.
+- The bundle is sparse: 150 GB provisioned, 48 MB actually consumed. Growing it later is
+  one command.
+
+The real fix remains a second archive: the shelved laptop's 300 GB LV (needs a cable) or
+cloud object storage. Until then this is a known, accepted single point of failure.
 
 ---
 
-## 8. Calendar
+## 4. Data stores and their boundaries
 
-Own the data (Postgres `events`), but expose it where Apple's native apps can reach it.
+Three stateful services, each with a clear job. Boundaries matter because there are no
+cross-store transactions.
 
-**Start with a signed `.ics` subscription URL.** Roughly 100 lines of Go. Apple Calendar
-on macOS *and* iPhone subscribes to it and polls. **This gives you the calendar feature on
-your phone before the iOS app exists** — a large early win given iOS is deferred.
-
-Upgrade to full two-way **CalDAV** later (hand-rolled, or Radicale behind the API) when
-you want to create and edit events from the native client.
-
----
-
-## 9. Push notifications without an Apple Developer account
-
-Self-host **ntfy** on the VPS. Install the free ntfy app from the App Store on your
-iPhone. Subscribe to a secret topic. You now have real push notifications — today, for
-$0, with no developer account.
-
-Use it for: proposed-event review prompts, forge offline alerts, backup failures, the
-daily digest, job failures. When you do build the iOS app later, APNs replaces it for
-in-app notifications and ntfy stays as the ops/alerting channel.
-
----
-
-## 10. Cross-cutting
-
-### Auth
-- **Passkeys (WebAuthn)** for web — Touch ID on the Mac, nothing to leak.
-- Devices hold a long-lived opaque **device token** in Keychain, exchanged for short-lived
-  JWTs.
-- Every device individually registered and revocable. You will want this the first time a
-  device goes missing.
-- **The forge agent gets a restricted scope** (`jobs:claim`, `blobs:write`) — it must not
-  be able to read your email.
-
-### Backups — Phase 0, not "later"
-The VPS is the source of truth. If it dies without backups, badal is over.
-- **restic** → Backblaze B2 or a Hetzner Storage Box. Nightly, encrypted, retention
-  7 daily / 4 weekly / 12 monthly.
-- Postgres: `pg_dump` nightly + WAL archiving to object storage (or pgBackRest for PITR).
-- The forge replica is copy #2, different failure domain.
-- **A backup you have never restored is not a backup.** Automate a monthly restore drill:
-  restore the latest snapshot into a throwaway container and assert row counts. Alert if
-  it fails.
-
-### Alerts
-forge offline > 6 h · queue depth · failed jobs · backup age > 36 h · cert expiry ·
-disk > 80 % · email ingest stalled > 2 h.
-
----
-
-## 11. University mail — RESOLVED (2026-07-29)
-
-**Account:** `nandishwar.singh2026@vitstudent.ac.in` (VIT).
-**Verdict: Google Workspace. This is the best-case outcome** — the M365 Conditional
-Access nightmare does not apply.
-
-```
-MX     1 aspmx.l.google.com          ← Google Workspace, definitively
-       5 alt1/alt2.aspmx.l.google.com
-SPF    v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all
-TXT    MS=ms59884092
-DMARC  v=DMARC1; p=reject; adkim=s; aspf=s
-autodiscover.vitstudent.ac.in        → none
-enterpriseregistration.…             → none
-```
-
-Note the SPF includes **both** Google and Outlook, and there is an `MS=` tenant marker —
-so VIT has a Microsoft tenant too. But the absence of `autodiscover` / `enterprise-
-registration` CNAMEs plus Google-only MX means **mailboxes live in Google**. Microsoft is
-almost certainly just licensing/SSO or a sending path for some campus system. Ingest from
-Google.
-
-### Two integration paths
-
-| | Gmail API + OAuth | IMAP + App Password |
+| Store | Owns | Why |
 |---|---|---|
-| Survives tenant hardening | ✅ usually | ❌ often disabled first |
-| Incremental sync | ✅ `history.list` from a stored `historyId` | ⚠️ UIDVALIDITY/UIDNEXT bookkeeping |
-| Real push | ✅ `users.watch` → Pub/Sub | IMAP IDLE (a held connection) |
-| Setup cost | Google Cloud project + OAuth consent | ~zero, if permitted |
+| **Postgres 17** | `change_log`, devices/auth, jobs, email metadata, calendar events, blob manifests, object ACLs | System of record. Already backed up and restore-drilled. Transactional |
+| **SurrealDB** | Note graph, note bodies, links/backlinks, vector embeddings, tags | Graph traversal + vector search in one engine, without Neo4j's JVM |
+| **Garage** | Blob content, addressed by BLAKE3 chunk hash | S3 semantics, cheap, swappable |
 
-**Recommended: Gmail API, `gmail.readonly` scope, desktop OAuth flow.** Store the refresh
-token in `.env`. Poll `history.list` against a persisted `historyId` for cheap incremental
-sync; add `users.watch` + Pub/Sub later if polling latency ever matters. Read-only scope
-enforces §7.3's "no sending" boundary at the API level rather than by convention.
+**Postgres stays the source of truth for identity and ordering.** SurrealDB is the
+knowledge layer. If they ever disagree, Postgres wins and Surreal is rebuilt from it —
+that rule makes the lack of cross-store transactions survivable.
 
-### The one remaining unknown — a 30-second check
+**Consequences to handle:**
+- SurrealDB must join the backup path (`surreal export` into the restic staging dir).
+  Non-negotiable — it will hold your notes.
+- Memory on a 4 GB box: Postgres 512 MB + Surreal ~350 MB + Garage 150 MB + VM 100 MB +
+  Caddy/ntfy ~50 MB ≈ **1.2 GB of 3.6 GB**. Comfortable, but this is the last stateful
+  service that fits. Anything more forces the VPS upgrade deferred in §1.
 
-Both paths depend on VIT's Workspace admin policy, which DNS cannot reveal:
+### The sync spine (unchanged, already designed)
 
-1. Open **https://myaccount.google.com/apppasswords** signed in as the VIT account.
-   - Loads → IMAP + app password works. Fastest possible v1.
-   - Blocked → app passwords are off; use the Gmail API.
-2. Gmail → Settings → **Forwarding and POP/IMAP** → is "Enable IMAP" present?
-3. Admins can also block unverified third-party OAuth apps. If the OAuth consent screen
-   errors with *"access blocked: this app is blocked"*, the tenant restricts app access.
-
-**If both are locked down:** set a Gmail filter to auto-forward to a mailbox you control
-and ingest from there — but VIT's `p=reject` DMARC with strict alignment means forwarded
-mail may fail SPF/DKIM at the destination, so the receiving mailbox must be lenient about
-forwarded mail. Test before relying on it.
+Every mutation appends to `change_log(seq, entity_type, entity_id, op, actor_device, hlc)`.
+Clients hold a `since_seq` cursor and pull. The WebSocket is a **doorbell, not a data
+channel** — it only says "new seq available". Reconnection, missed messages and cold start
+all become the same code path.
 
 ---
 
-## 12. Repository layout
+## 5. Worker: badal-mac
 
-```
-badal/
-  cmd/
-    badal-api/            # VPS monolith
-    badal-forge/          # laptop agent
-    badal/                # CLI
-  internal/
-    auth/  store/  sync/  chunks/  jobs/
-    mail/  calendar/  notes/  ai/
-  db/migrations/          # goose
-  web/                    # SvelteKit PWA
-  apple/                  # Swift package (shared) + Xcode project
-  deploy/
-    compose.yml
-    caddy/
-    systemd/              # forge units, watchdogs, net monitor
-    ansible/              # core.yml, forge.yml
-  docs/
-```
+`badal-forge` runs as a **launchd agent on the Mac**. The lease protocol from Revision 1 is
+unchanged and is what makes a laptop viable as a worker:
+
+- Claim job → 60 s lease → heartbeat every 20 s → VPS reaper requeues on expiry
+- Agent holds a `caffeinate` assertion **for the duration of each job**, so closing the lid
+  or unplugging mid-job cannot kill it
+- `com.badal.power` daemon keeps the Mac awake on AC (lid closed and idle), and restores
+  normal sleep on battery
+
+**Mac-only compute means latency is a product decision, not a bug.** Capture a photo on
+your phone while the Mac is shut and nothing processes until it wakes. Every queued job
+therefore surfaces in the UI as *"queued — will process when your Mac is available"*, with
+the queue visible. Being honest in the interface is the whole mitigation.
+
+**The Air is fanless.** Sustained ASR/embedding runs with the lid closed will thermally
+throttle — graceful, not damaging, but throughput drops. The agent caps concurrency at 2
+jobs and backs off above 90 °C.
+
+Email text extraction stays on **OpenRouter** — it is text-only, costs under $1/month, and
+must work when the Mac is shut, since deadline extraction is time-sensitive.
 
 ---
 
-## 13. Roadmap
+## 6. Phase 7 — the knowledge layer (expanded)
 
-Revised 2026-07-30 for the forge move (§5.0) and the storage change (§3.1).
+This is the payoff phase and now the largest. Everything below runs on the Mac worker.
 
-| Phase | Est. | Status | Scope | Done when |
+### 6.1 Image → structured note
+
+```
+PWA camera/upload → blob store → job(kind=image_note)
+  → Apple Vision VNRecognizeTextRequest      (OCR + word-level bounding boxes)
+  → layout reconstruction from boxes         (columns, tables, headings)
+  → local VLM via MLX                        (diagrams, charts, scene context)
+  → LLM structuring → markdown note + entities + suggested links
+  → SurrealDB: note node + embedding + edges
+```
+
+Apple's Vision framework is the right primary: native, no model download, no Python, and
+better on skewed phone photos than RapidOCR. The VLM only runs when OCR confidence is low
+or the image is non-textual — most captures never need it.
+
+### 6.2 Audio → structured note, without the hallucinations
+
+Whisper hallucinates confidently on silence and noise — the notorious *"Thank you for
+watching"* on empty audio. It is the single biggest quality problem in ASR pipelines, and
+the fix is preprocessing, not prompting.
+
+```
+MediaRecorder (webm/opus) → blob → job(kind=audio_note)
+  1. ffmpeg → 16 kHz mono PCM
+  2. Silero VAD → speech segment timestamps
+  3. DROP non-speech; concatenate speech only, keeping a map back to original offsets
+  4. whisper.cpp (Metal) per segment
+  5. post-filter: drop segments with no_speech_prob > 0.6, or matching a
+     known-hallucination phrase list, or repeating n-grams (the loop failure mode)
+  6. re-map timestamps to the original recording
+  7. LLM structuring → title, summary, action items, entities
+  8. SurrealDB note + embedding + edges
+```
+
+Steps 3 and 5 are the anti-hallucination core: **never send silence to the model**, and
+distrust what it returns for low-confidence spans. Timestamp remapping (6) matters because
+dropping silence shifts every offset — without it, playback sync is wrong.
+
+### 6.3 Chat with your notes
+
+Retrieval is hybrid, and the graph is what makes it better than plain RAG:
+
+1. Vector search over note embeddings (SurrealDB)
+2. Full-text/BM25 for exact terms — names and IDs that embeddings blur
+3. **Graph expansion**: pull 1-hop neighbours of top hits. A note's linked notes are
+   usually relevant context that pure vector search misses
+4. Rerank, assemble, answer with **inline citations to note IDs**
+
+Answers cite sources, always. An unsourced answer about your own notes is worse than none.
+
+### 6.4 Search
+
+One box, three signals blended: full-text, vector, graph proximity. Filters for date,
+tag, source (note / email / image / audio), and entity.
+
+---
+
+## 7. Email → Calendar (unchanged design, revised sequencing)
+
+Gmail API, `gmail.readonly`, incremental via stored `historyId`. Full pipeline in
+Revision 1 and still current:
+
+- Raw MIME archived immutably — re-extract later with a better model, never re-fetch
+- Structured JSON output with a mandatory **`evidence`** field: a verbatim quote that must
+  appear in the source, or the extraction is rejected. Kills most hallucinated dates
+- Relative dates resolved against `received_at`, never `now()`
+- Idempotent on `(message_id, extraction_version)`
+- Events land as **`proposed`**, confirmed one-tap from a review inbox. Auto-writing
+  low-confidence events makes the calendar untrustworthy within a month
+- Signed `.ics` subscription URL — native Apple Calendar on Mac and iPhone, ~100 lines
+
+**Sequencing note:** Phase 4 now runs *before* the worker (Phase 3). Attachment OCR
+therefore ships in two parts — text attachments (`pdftotext` on the VPS) work immediately;
+image and scanned attachments queue and process once Phase 3 lands.
+
+---
+
+## 8. Files, without a File Provider
+
+The PWA cannot mount a drive in Finder. Instead the API exposes **WebDAV**, which macOS
+mounts natively (`Finder → Go → Connect to Server`), and Windows/Linux support too.
+
+Same chunked content-addressed store underneath (FastCDC + BLAKE3, probe-then-upload only
+missing chunks). WebDAV is a second protocol over the same manifests, not a second store.
+
+---
+
+## 9. Operations (as built — Phase 0 complete)
+
+### badal-core
+
+| | |
+|---|---|
+| TLS | Caddy, Let's Encrypt, `badal.` + `ntfy.` subdomains |
+| Containers | **podman quadlets** — systemd-native, `Restart=always`, no daemon |
+| SSH | key-only, **tailnet-only** (port 22 removed from the public zone) |
+| Firewall | public: `http https` · trusted: `tailscale0` |
+| SELinux | **Enforcing**, 0 denials |
+| Swap | 2 GB, `vm.swappiness=10` |
+| Backups | restic nightly 02:30 UTC → dedicated Garage bucket + separate key |
+| Restore | **verified** — 5 000 rows incl. `vector` restored, checksum identical. Monthly drill |
+| Replica | nightly 21:30 to the Mac bundle, `restic check --read-data` clean |
+| Metrics | VictoriaMetrics + node_exporter, tailnet-only, 6 month retention |
+| Alerts | `badal-healthcheck` every 15 min → ntfy. Disk, backup age, failed units, containers, TLS expiry, memory |
+
+### Hard-won operational knowledge
+
+**SELinux `disabled` → `enforcing` directly will brick the box.** With no labels on disk,
+the policy denies everything including the relabel itself. It deadlocks before journald
+starts, so there is no log. Always go via `permissive` + `/.autorelabel`, verify 0 AVCs,
+then `enforcing`. Recovery is `POST /virtual-machines/{id}/recovery` — an Ubuntu rescue OS
+with the real disk as `/dev/sdb1`.
+
+**`firewall-cmd --reload` silently breaks container networking.** It flushes netavark's
+rules; containers stay healthy but stop resolving each other. Nothing logs an error.
+`badal-fw-watch.service` watches the `Reloaded` D-Bus signal and runs `podman network
+reload --all`. Note netavark uses the **iptables** backend here — `nft list tables` is not
+a valid health check.
+
+**sshd takes the first occurrence of a keyword.** Fedora ships
+`01-permitrootlogin.conf` with `PermitRootLogin yes`, which beats any `99-` drop-in. Use a
+`00-` prefix.
+
+**A health check that exits non-zero marks its own systemd unit failed** — which the next
+run then reports as a problem. Self-sustaining false alarm. Exit 0; the notification is
+the signal.
+
+**Hostinger `public-keys/attach` returns 200 but queues nothing** on a running VM — keys
+are only baked in at reinstall. Use `PUT .../root-password` instead. Backups are
+`GET`-only via API; manual snapshots need hPanel.
+
+### badal-forge (shelved, recoverable)
+
+On the tailnet, hardened, root grown to 80 GB, **300 GB `fedora/archive` LV formatted and
+mounted**. Outstanding: nouveau owns the GPU and RPMFusion's blacklist was never
+installed. Fix as one atomic operation — `/etc/modprobe.d` blacklist, `grubby
+--update-kernel=ALL --args="rd.driver.blacklist=nouveau modprobe.blacklist=nouveau"`,
+`dracut --regenerate-all`, reboot — and delete `/etc/modules-load.d/badal-nvidia.conf`.
+
+Root cause of shelving: tethered to an iPhone hotspot, which powers down when the phone
+locks. Four disconnections in an hour. The machine was never at fault. **One ethernet
+cable brings back a 12-thread node and a 300 GB archive.**
+
+---
+
+## 10. Roadmap (your ordering)
+
+| # | Phase | Est. | Depends on | Done when |
 |---|---|---|---|---|
-| **0 · Foundation** | 2 wk | **~90%** | Tailscale mesh, Caddy+TLS, Postgres+pgvector, Garage S3, restic + verified restore, Mac backup replica, ntfy, SELinux, firewall. Mail diagnostics **done** (§11) | `/health` → 200 ✅ · backup restored and verified ✅ · *remaining: VictoriaMetrics* |
-| **1 · Spine** | 3 wk | next | Go API skeleton, auth + device registration, `change_log` + sync cursor, FastCDC chunked blob store, `badal` CLI | `badal push` / `badal pull` a file from the terminal |
-| **2 · Notes** | 4 wk | | Automerge CRDT, notes API, SwiftUI **macOS** app (editor, offline, sync, global quick-capture hotkey), web notes UI | **You use it daily.** The milestone that decides whether the project survives |
-| **3 · Worker** | 2 wk | | Job queue + lease/heartbeat/reaper, forge agent **on macOS** (launchd, not systemd), OpenRouter fallback routing | Close the laptop mid-job → it completes anyway via requeue or cloud fallback |
-| **4 · Email → Calendar** | 5 wk | | Gmail API ingest, MIME parse, raw archive, OCR routing, DeepSeek extraction + evidence validation, dedupe, proposed-event review inbox, signed `.ics` URL | Apple Calendar shows VIT deadlines you confirmed with one tap |
-| **5 · Files & photos** | 4 wk | ⚠️ | macOS File Provider extension (on-demand files in Finder), photo ingest, thumbnails, CLIP tagging | Finder shows badal as a real drive. **Blocked on §3.1 capacity — photos will not fit in 20 GB** |
-| **6 · iOS** | 3 wk | | Apple Developer account, SwiftUI iOS app reusing the Phase 2 Swift package, APNs, Share Sheet, Shortcuts, background refresh | badal on your phone, natively |
-| **7 · Semantic search** | 3 wk | | Embeddings on the Mac worker over notes + mail + files, pgvector, hybrid BM25 + vector, RAG answer endpoint | "Ask my stuff" works across everything |
+| **0** | Foundation | — | — | ✅ **complete** |
+| **1** | **Spine** — Go API, auth/devices, `change_log`, FastCDC blobs, `badal` CLI | 3 wk | 0 | `badal push`/`pull` from the terminal |
+| **2** | **Notes + PWA** — SurrealDB, note graph, SvelteKit PWA, offline, Web Push, quick capture | 5 wk | 1 | **You use it daily** |
+| **3** | **Email → Calendar** — Gmail ingest, extraction + evidence validation, review inbox, `.ics` | 5 wk | 2 | Apple Calendar shows VIT deadlines you confirmed |
+| **4** | **Worker** — job queue, lease/heartbeat/reaper, launchd agent, caffeinate, thermal backoff | 2 wk | 1 | Close the lid mid-job → it still completes |
+| **5** | **Knowledge layer** — image→note, audio→note with VAD, chat-with-notes, hybrid search | 7 wk | 2, 4 | Photograph a whiteboard, get a linked structured note |
+| **6** | **Files** — WebDAV, chunked sync, eviction to the Mac archive, cold-read restore | 4 wk | 1, 4 | Finder mounts badal; a 90-day-old file restores on demand |
+| **7** | **Beyond** — §11 | — | — | — |
 
-**Phase 3 shrank** (was 3 wk): all the systemd hardening — watchdogs, lid/power config,
-auto-WiFi recovery, thermal caps — died with the laptop. A launchd agent on the Mac needs
-none of it.
+**Total to a genuinely useful system: ~22 weeks.** Phase 2 is the one that decides whether
+this survives — if it is not in daily use by then, everything before it is plumbing you
+cannot feel.
 
-**Phase 5 is the capacity wall.** Everything before it fits comfortably in 20 GB; photos
-do not. Resolve §3.1 before starting it.
-
----
-
-## 14. Feature suggestions, ranked by value-to-effort
-
-1. **Self-hosted ntfy push** — real iPhone notifications, no dev account. Phase 0.
-2. **`.ics` subscription URL** — calendar everywhere without an iOS app. ~100 lines.
-3. **Quick capture from everywhere** — global hotkey on Mac, `badal note "..."` in the
-   terminal, an email-to-self address, later a Shortcuts action. Capture friction is what
-   kills note apps.
-4. **The review-inbox pattern** — generalise it. *No AI output writes to your source of
-   truth unreviewed*, for any feature.
-5. **Web clipper** — browser extension → page as markdown into notes. Trivial once the
-   notes API exists.
-6. **Voice memo → Whisper → note** — excellent use of the GPU, and iOS Shortcuts can
-   record and upload with no app at all.
-7. **Semantic search across everything** — the actual payoff of owning all your data in
-   one place.
-8. **Daily digest** — one morning ntfy: today's events, this week's deadlines, mail needing
-   action. This is what makes it feel like *your* cloud rather than a pile of services.
-9. **`badal` CLI early** — build it in Phase 1 and every endpoint gets exercised before any
-   UI exists. Free integration test harness.
-10. **Immutable AI action log** — every model call with prompt version, cost, latency,
-    output. Enables A/B testing prompts and auditing surprises.
-
-### Deliberately out of scope
-Media server (run Jellyfin separately), password manager (use Bitwarden), home automation,
-multi-user support. Each is its own project and none makes the core better.
+Phase 4 shrank from 3 weeks to 2: the systemd watchdogs, lid/power handling, WiFi recovery
+and thermal caps all died with the laptop. launchd needs none of it.
 
 ---
 
-## 14b. Phase 0 progress — as built (2026-07-29)
+## 11. Suggested next features, ranked by value-to-effort
 
-**Live:** `https://badal.nandishwarsingh.com/health` → `200 ok`, Let's Encrypt cert valid
-to 2026-10-27, HTTP→HTTPS 308. **Verified across a reboot.**
+1. **Daily digest** — one morning push: today's events, week's deadlines, mail needing
+   action, notes you touched. Ties everything together and makes it feel like *yours*.
+2. **Web clipper** — browser extension → page as markdown into the graph. Trivial once
+   notes exist.
+3. **Auto-linking** — on note save, embed and suggest the 5 nearest existing notes.
+   Builds the graph without manual `[[links]]`, which nobody sustains.
+4. **Entity extraction → graph nodes** — people, courses, deadlines become first-class
+   nodes. "Show everything about Prof. X" starts working.
+5. **Timeline view** — every note, email and capture on one scrubable axis.
+6. **Templates + recurring notes** — daily journal, lecture notes, meeting notes.
+7. **Public share links** — signed, expiring, single note or folder.
+8. **Import** — Notion/Obsidian/Apple Notes ingestion, so the graph starts populated.
+9. **Voice command capture** — hold a button in the PWA, speak, it becomes a routed note
+   or a calendar event. Uses the whole Phase 5 pipeline.
+10. **Local LLM option** — 16 GB unified runs 8–14B models. Route privacy-sensitive
+    extraction to the Mac and keep OpenRouter for the rest.
 
-| Done | Detail |
+Deliberately out of scope: media server (Jellyfin), password manager (Bitwarden), home
+automation, multi-user. Each is its own project.
+
+---
+
+## 12. Open risks
+
+| Risk | Status |
 |---|---|
-| Root access recovered | Supplied password was wrong. Hostinger's `public-keys/attach` only bakes keys in at *reinstall*, so that route was a dead end — recovered via `PUT /virtual-machines/1367060/root-password` |
-| SSH hardened | ed25519 key `~/.ssh/badal_ed25519`; `PermitRootLogin prohibit-password`, `PasswordAuthentication no`, `MaxAuthTries 3`. Alias `ssh badal-core` |
-| **rpcbind removed from public IP** | Port 111 was listening on `0.0.0.0` — a known amplification vector, unused here. Disabled + masked |
-| firewalld | Was **not installed** on this minimal image. Installed, enabled; `public` zone = ssh/http/https + 443/udp for HTTP/3. `cockpit` and `dhcpv6-client` removed |
-| Swap | 2 GB swapfile, `vm.swappiness=10`. `mkswap` warned about XFS extents — verified benign, re-activates cleanly and survives reboot |
-| Caddy | podman **quadlet** at `/etc/containers/systemd/caddy.container`, auto-starts at boot |
-| Host | hostname `badal-core`, **timezone UTC** (deliberate — servers log in UTC; IST is an app-layer concern), chronyd on |
-| DNS | `badal` A + AAAA added via **`overwrite: false`** (merge). Google Search Console TXT and `www` CNAME preserved. Zone backed up to `deploy/dns/zone-backup-2026-07-29.json` |
-| Packages | podman, git, jq, tar, policycoreutils-python-utils, chrony |
-
-### SELinux: now `Enforcing` — and how the first attempt broke the box
-
-The image shipped `SELINUX=disabled`. It is now **Enforcing**, with 0 AVC denials and 0
-failed units across a reboot.
-
-**The first attempt bricked the VPS for ~25 minutes.** Recording it because the same trap
-applies to the Fedora laptop:
-
-> Setting `SELINUX=enforcing` + `touch /.autorelabel` and rebooting **does not work** when
-> SELinux was previously `disabled`. With the filesystem carrying no security labels at
-> all, the kernel loads the policy at boot and denies essentially everything — *including
-> the processes that would run the relabel*. It deadlocks before networking or journald
-> start, so there is no log and no console output. `/.autorelabel` was still present
-> afterwards, proving the relabel never executed.
-
-**Correct sequence — always go via permissive:**
-
-```
-1. SELINUX=permissive  + touch /.autorelabel  → reboot   # relabel runs, nothing blocked
-2. verify: getenforce == Permissive, /.autorelabel consumed, ls -Z shows real labels,
-           ausearch -m AVC -ts boot  == 0 denials
-3. SELINUX=enforcing → reboot
-4. verify again
-```
-
-**Recovery, if it happens anyway:** Hostinger's API has no console endpoint, but
-`POST /virtual-machines/{id}/recovery` boots an Ubuntu 24.04 rescue OS with the real disk
-attached as a *second* device (`/dev/sdb1`, auto-mounted at `/mnt/sdb1`). Edit
-`/mnt/sdb1/etc/selinux/config` there, then `DELETE .../recovery` to boot back. Total
-round trip ~4 minutes. A plain `POST /restart` does **not** help — the hang is
-deterministic.
-
-Podman bind mounts need `:Z` on every `Volume=` line in the quadlets, or containers are
-denied under enforcing. Already applied to `caddy.container`.
-
-**Also discovered:** Hostinger takes **automatic weekly backups** (most recent
-2026-07-24), and the VM was migrated between hosts on 2026-07-22. The weekly backup is a
-useful floor, but it does not replace §10 — it is provider-local and not restore-tested.
-
-### Garage S3 hot tier — live
-
-Single-node Garage `v1.0.1` as a podman quadlet, zone `vps`, **capacity capped at 20 GB**
-of the 50 GB disk per §3.1. Bucket `badal-hot`, key `badal-api` (read/write/owner).
-Verified with a real S3 `PUT` + `LIST` round-trip.
-
-**Bound to loopback only** (`127.0.0.1:3900` API, `:3903` admin) — not reachable from the
-internet even though the firewall would allow nothing anyway. When the laptop joins over
-Tailscale, the bind moves to the tailnet interface, *not* to `0.0.0.0`.
-
-Credentials are in `.env` (`S3_HOT_*`) and on the box at `/root/.garage-badal-api.creds`.
-
-### Hostinger backups: read-only via API
-
-`GET .../backups` lists them; **`POST` is not supported** (405 — `GET, HEAD` only). Weekly
-automatic snapshots continue on their own, and a manual one can only be triggered from
-hPanel. They remain a useful floor but are provider-local, weekly, and not restore-tested —
-they do not replace §10.
-
-### Postgres — live
-
-`pgvector/pgvector:pg17` (Postgres 17.10) as a quadlet, loopback `5432`. Using the
-pgvector image *now* so §7's semantic search needs no migration later. `vector` and
-`pg_trgm` extensions created.
-
-Tuned for 1 vCPU / 4 GB — notably **parallel query is disabled**
-(`max_parallel_workers_per_gather=0`), because on a single core parallel workers only add
-scheduling overhead:
-
-```
-shared_buffers=512MB  effective_cache_size=1536MB  maintenance_work_mem=128MB
-work_mem=8MB          max_connections=40           max_parallel_workers=1
-random_page_cost=1.1  effective_io_concurrency=200 wal_compression=on
-```
-
-### restic — live, and the restore drill PASSED
-
-Repo `s3:http://127.0.0.1:3900/badal-backup` with its own Garage key (`badal-restic`),
-separate from `badal-api` so a compromised app key cannot reach the backups.
-
-- Nightly `badal-backup.timer` at 02:30 UTC (08:00 IST): `pg_dump -Fc` + `pg_dumpall
-  --globals-only` + `/etc/badal` + `/etc/containers/systemd`. Retention 7d/4w/12m.
-- **Logical dumps, not a file copy of a live `PGDATA`** — the latter is not consistent and
-  is not a backup.
-- **Verified end to end**: seeded 5 000 rows including a `vector` column, backed up,
-  restored from the repo into a scratch database, and compared checksums —
-  byte-identical. Automated as `badal-restore-drill.timer`, monthly, alerting via ntfy on
-  failure.
-
-> ⚠️ **This is not yet disaster recovery.** The repo lives in Garage on the same 50 GB
-> disk as the data. It protects against logical mistakes — a bad migration, an accidental
-> `DELETE` — but not against losing the VPS. Real DR today is Hostinger's weekly snapshot.
-> The offsite copy arrives with the laptop: `restic copy` into the archive tier.
-
-### ntfy — live at `https://ntfy.nandishwarsingh.com`
-
-`auth-default-access: deny-all`, admin user `badal`, token auth, random secret topic.
-**Verified: anonymous publish → 403; authenticated publish → delivered and read back.**
-This is real iPhone push today via the free App Store client, with no Apple Developer
-account (§9).
-
-### Shared podman network
-
-Caddy initially 502'd proxying to ntfy: inside a container, `127.0.0.1` is the
-*container's* loopback, not the host's. The direct `respond` routes worked, which hid the
-problem. Fixed with a `badal.network` quadlet joining caddy/ntfy/garage/postgres, so
-services resolve each other by container name (`reverse_proxy ntfy:80`). `badal-api` will
-join the same network.
-
-### Tailscale — badal-core joined
-
-Node `badal-core`, tailnet IP **`100.73.64.48`** / `fd7a:115c:a1e0::9601:40d6`, owner
-`NandishwarSingh@`. `tailscale0` added to firewalld's **trusted** zone, so tailnet traffic
-reaches internal services while the public zone stays at ssh/http/https.
-
-`--accept-dns=false` is deliberate: a server should not have tailnet DNS override its own
-resolution. The node still registers its MagicDNS name for other devices.
-
-#### Tailscale SSH is OFF — and stays off
-
-Tailscale SSH **does not work under SELinux enforcing**
-([tailscale#4908](https://github.com/tailscale/tailscale/issues/4908) — open and
-unresolved; it needs a hand-written policy module). Rather than maintain a custom SELinux
-module for a convenience feature, `RunSSH=false`.
-
-**The same security goal is reached differently.** The original plan wanted "Tailscale SSH
-so port 22 isn't exposed". Instead, keep ordinary key-only SSH on 22 and remove it from
-the *public* firewall zone once every device is on the tailnet:
-
-```bash
-firewall-cmd --permanent --zone=public --remove-service=ssh && firewall-cmd --reload
-```
-
-Port 22 then answers only on `tailscale0` (already trusted). Identical outcome, no SELinux
-policy work, and it works for every tailnet device rather than only Tailscale SSH clients.
-
-> **Do not run this until a second device is on the tailnet and verified**, or the only
-> path back in is Hostinger recovery mode.
-
-### Port 22 is now tailnet-only
-
-`nandishwars-macbook-air` (`100.127.18.18`) joined the tailnet, and the connection to
-badal-core is **direct over IPv6** (`[2a02:4780:63:c00c::1]:41641`), not DERP-relayed.
-
-With a second device verified, `ssh` was removed from the public firewalld zone:
-
-```
-public zone:  http https          # 22 no longer answers from the internet
-trusted zone: tailscale0
-```
-
-Verified from outside: **22 closed, 80/443 open.** Local alias `badal-core` now points at
-`100.73.64.48`; `badal-public` is kept as a documented emergency route that only works if
-`ssh` is re-added to the public zone.
-
-### ⚠️ `firewall-cmd --reload` silently breaks container networking
-
-Removing `ssh` from the public zone took ntfy down with a 502. Every container was
-healthy — **the firewalld reload flushed netavark's rules**, so podman's DNS at
-`10.89.0.1` became unreachable and Caddy could no longer resolve `ntfy`. Nothing logs an
-error; the containers just stop being able to find each other.
-
-This had happened on *every* earlier reload too, but each was followed by a container
-restart, which masked it.
-
-Fix is `podman network reload --all`. Made automatic via **`badal-fw-watch.service`**,
-which watches firewalld's `org.fedoraproject.FirewallD1.Reloaded` D-Bus signal and
-reinstates the rules. Confirmed firing in the journal on two consecutive reloads.
-
-Note: netavark uses the **iptables** backend here (7 `NETAVARK` chains), not nftables — so
-`nft list tables` is not a valid health indicator. Test connectivity functionally
-(`podman exec caddy wget -qO- http://ntfy:80/v1/health`) instead.
-
-### Backup replica on the Mac — live, and verified restorable
-
-Phase 0's biggest gap is closed: backups no longer live only on the disk they protect.
-
-- **50 GB APFS sparse bundle** at `~/badal-archive.sparsebundle` — hard cap, but only
-  consumes what it uses (34 MB today). No sudo or disk repartitioning needed.
-- Garage's S3 API now also binds the **tailnet** address (`100.73.64.48:3900`) alongside
-  loopback, so the Mac can pull directly. Safe: the tailnet is authenticated and
-  encrypted, and `tailscale0` is already in firewalld's trusted zone.
-- Replica repo initialised with `--copy-chunker-params` from the source, so copies
-  deduplicate against the origin instead of re-chunking.
-- **`restic check --read-data` passes with no errors**, and a restore from the *Mac* copy
-  produced a valid `PGDMP` dump.
-- `com.badal.replicate` launchd agent runs daily at 21:30, auto-mounts the bundle, skips
-  cleanly when the tailnet is down, then prunes 7d/4w/12m.
-
-Postgres and config are now **two copies on independent hardware**. Blobs are still one.
-
-### `badal-forge` (ASUS/Fedora) — shelved, recoverable
-
-Preserved state, per §5.0: on the tailnet as `100.88.36.28`, hostname set, SSH key-only
-(`00-badal.conf` — Fedora's `01-permitrootlogin.conf` sets `PermitRootLogin yes` and wins
-on first-match, so a `00-` prefix is required), firewall down to `dhcpv6-client` on WiFi
-with `tailscale0` trusted, root grown 15 GB → 80 GB, and a **300 GB `fedora/archive` LV
-formatted and mounted** at `/var/lib/badal/archive`.
-
-Outstanding if it ever returns: nouveau owns the GPU (`NVRM: GPU 0000:01:00.0 is already
-bound to nouveau`) and RPMFusion's blacklist file was never installed. Fix is one atomic
-operation — write `/etc/modprobe.d`, `grubby --update-kernel=ALL
---args="rd.driver.blacklist=nouveau modprobe.blacklist=nouveau"`, `dracut --regenerate-all`,
-reboot. Also delete `/etc/modules-load.d/badal-nvidia.conf`, which currently forces the
-nvidia module to load at boot while nouveau still owns the device.
-
-### Remaining in Phase 0
-iPhone onto the tailnet · VictoriaMetrics · a second copy of **blobs** (see §3.1)
-
----
-
-## 15. Status of prerequisites
-
-| Item | Status |
-|---|---|
-| VPS specs / OS | ✅ Hostinger KVM 1 · 1 vCPU · 4 GB · 50 GB · CentOS Stream 9 |
-| Domain | ✅ `nandishwarsingh.com`, Hostinger DNS (currently only a `www` CNAME and a Google TXT) |
-| Hostinger API key | ✅ verified working |
-| OpenRouter key | ✅ verified working, paid tier, zero usage to date |
-| Timezone | ✅ Asia/Kolkata |
-| GPU | ✅ GTX 1650 4 GB — see §5.2b |
-| **VPS root access** | ❌ **BLOCKED** — password auth is enabled but the supplied password is rejected |
-| Laptop SSH | ⏳ pending Fedora install |
-| Laptop RAM / disk | ⏳ needed to size the blob replica |
-| Mail diagnostics (§11) | ⏳ **run this in week 1** — highest-risk unknown |
-| Backblaze B2 account | ⏳ needed for §3.1 |
-
-### Credential hygiene
-
-Phase 0 installs an ed25519 key (`~/.ssh/badal_ed25519`, pubkey `badal-admin`) and disables
-password auth entirely, which retires the root password as a credential.
-
-The Hostinger and OpenRouter keys were shared in plaintext and should be **rotated once
-Phase 0 is stable** — both are one-click regenerations in their respective dashboards, and
-`.env` is the only place they need updating.
+| Evicted blobs are single-copy on the Mac | **Accepted.** Mitigated by `pinned` + 90-day window |
+| SurrealDB is the last service that fits in 4 GB | Monitored. Next stateful service forces a VPS upgrade |
+| Mac-only compute means captures wait for the lid to open | **Accepted.** Surfaced honestly in the UI |
+| iOS PWAs cannot sync while closed | **Accepted.** Sync on open + Web Push |
+| Gmail tenant may block IMAP *and* third-party OAuth | **Unverified.** Check `myaccount.google.com/apppasswords` before Phase 3 |
+| 30 GB blob ceiling until eviction is live | Resolved by Phase 6 |
