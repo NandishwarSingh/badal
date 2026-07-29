@@ -720,9 +720,59 @@ automatic snapshots continue on their own, and a manual one can only be triggere
 hPanel. They remain a useful floor but are provider-local, weekly, and not restore-tested —
 they do not replace §10.
 
+### Postgres — live
+
+`pgvector/pgvector:pg17` (Postgres 17.10) as a quadlet, loopback `5432`. Using the
+pgvector image *now* so §7's semantic search needs no migration later. `vector` and
+`pg_trgm` extensions created.
+
+Tuned for 1 vCPU / 4 GB — notably **parallel query is disabled**
+(`max_parallel_workers_per_gather=0`), because on a single core parallel workers only add
+scheduling overhead:
+
+```
+shared_buffers=512MB  effective_cache_size=1536MB  maintenance_work_mem=128MB
+work_mem=8MB          max_connections=40           max_parallel_workers=1
+random_page_cost=1.1  effective_io_concurrency=200 wal_compression=on
+```
+
+### restic — live, and the restore drill PASSED
+
+Repo `s3:http://127.0.0.1:3900/badal-backup` with its own Garage key (`badal-restic`),
+separate from `badal-api` so a compromised app key cannot reach the backups.
+
+- Nightly `badal-backup.timer` at 02:30 UTC (08:00 IST): `pg_dump -Fc` + `pg_dumpall
+  --globals-only` + `/etc/badal` + `/etc/containers/systemd`. Retention 7d/4w/12m.
+- **Logical dumps, not a file copy of a live `PGDATA`** — the latter is not consistent and
+  is not a backup.
+- **Verified end to end**: seeded 5 000 rows including a `vector` column, backed up,
+  restored from the repo into a scratch database, and compared checksums —
+  byte-identical. Automated as `badal-restore-drill.timer`, monthly, alerting via ntfy on
+  failure.
+
+> ⚠️ **This is not yet disaster recovery.** The repo lives in Garage on the same 50 GB
+> disk as the data. It protects against logical mistakes — a bad migration, an accidental
+> `DELETE` — but not against losing the VPS. Real DR today is Hostinger's weekly snapshot.
+> The offsite copy arrives with the laptop: `restic copy` into the archive tier.
+
+### ntfy — live at `https://ntfy.nandishwarsingh.com`
+
+`auth-default-access: deny-all`, admin user `badal`, token auth, random secret topic.
+**Verified: anonymous publish → 403; authenticated publish → delivered and read back.**
+This is real iPhone push today via the free App Store client, with no Apple Developer
+account (§9).
+
+### Shared podman network
+
+Caddy initially 502'd proxying to ntfy: inside a container, `127.0.0.1` is the
+*container's* loopback, not the host's. The direct `respond` routes worked, which hid the
+problem. Fixed with a `badal.network` quadlet joining caddy/ntfy/garage/postgres, so
+services resolve each other by container name (`reverse_proxy ntfy:80`). `badal-api` will
+join the same network.
+
 ### Remaining in Phase 0
-Postgres · restic backups + first restore drill · ntfy · VictoriaMetrics · Tailscale ·
-laptop Garage archive tier
+Tailscale (installed; awaiting tailnet login) · VictoriaMetrics · laptop Garage archive
+tier + `restic copy` offsite
 
 ---
 
