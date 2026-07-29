@@ -770,9 +770,39 @@ problem. Fixed with a `badal.network` quadlet joining caddy/ntfy/garage/postgres
 services resolve each other by container name (`reverse_proxy ntfy:80`). `badal-api` will
 join the same network.
 
+### Tailscale — badal-core joined
+
+Node `badal-core`, tailnet IP **`100.73.64.48`** / `fd7a:115c:a1e0::9601:40d6`, owner
+`NandishwarSingh@`. `tailscale0` added to firewalld's **trusted** zone, so tailnet traffic
+reaches internal services while the public zone stays at ssh/http/https.
+
+`--accept-dns=false` is deliberate: a server should not have tailnet DNS override its own
+resolution. The node still registers its MagicDNS name for other devices.
+
+#### Tailscale SSH is OFF — and stays off
+
+Tailscale SSH **does not work under SELinux enforcing**
+([tailscale#4908](https://github.com/tailscale/tailscale/issues/4908) — open and
+unresolved; it needs a hand-written policy module). Rather than maintain a custom SELinux
+module for a convenience feature, `RunSSH=false`.
+
+**The same security goal is reached differently.** The original plan wanted "Tailscale SSH
+so port 22 isn't exposed". Instead, keep ordinary key-only SSH on 22 and remove it from
+the *public* firewall zone once every device is on the tailnet:
+
+```bash
+firewall-cmd --permanent --zone=public --remove-service=ssh && firewall-cmd --reload
+```
+
+Port 22 then answers only on `tailscale0` (already trusted). Identical outcome, no SELinux
+policy work, and it works for every tailnet device rather than only Tailscale SSH clients.
+
+> **Do not run this until a second device is on the tailnet and verified**, or the only
+> path back in is Hostinger recovery mode.
+
 ### Remaining in Phase 0
-Tailscale (installed; awaiting tailnet login) · VictoriaMetrics · laptop Garage archive
-tier + `restic copy` offsite
+Mac + laptop + iPhone onto the tailnet · close port 22 publicly · VictoriaMetrics ·
+laptop Garage archive tier + `restic copy` offsite
 
 ---
 
