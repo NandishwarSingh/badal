@@ -1,0 +1,26 @@
+#!/bin/bash
+# Keep the Mac available as a badal worker while on AC, without flattening
+# the battery when it is unplugged.
+#
+# pmset's `disablesleep` is the only setting that overrides lid-close sleep,
+# and it accepts only -a (all power sources) -- it cannot be scoped to AC
+# declaratively. This daemon does that scoping: on AC the machine stays fully
+# awake with the lid shut; on battery normal Mac behaviour returns.
+set -u
+STATE=""
+while true; do
+  if pmset -g ps 2>/dev/null | head -1 | grep -q "AC Power"; then WANT=1; else WANT=0; fi
+  if [ "$WANT" != "$STATE" ]; then
+    pmset -a disablesleep "$WANT" 2>/dev/null
+    if [ "$WANT" = "1" ]; then
+      # plugged in: never idle-sleep, let the display sleep, keep disks spinning
+      pmset -c sleep 0 displaysleep 5 disksleep 0 womp 1 2>/dev/null
+      logger -t badal-power "on AC — sleep disabled, worker available"
+    else
+      pmset -c sleep 1 2>/dev/null
+      logger -t badal-power "on battery — normal sleep restored"
+    fi
+    STATE="$WANT"
+  fi
+  sleep 30
+done
