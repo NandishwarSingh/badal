@@ -524,36 +524,57 @@ disk > 80 % · email ingest stalled > 2 h.
 
 ---
 
-## 11. ⚠️ Open risk: university mail access
+## 11. University mail — RESOLVED (2026-07-29)
 
-This is the biggest unknown in the plan. Run these:
+**Account:** `nandishwar.singh2026@vitstudent.ac.in` (VIT).
+**Verdict: Google Workspace. This is the best-case outcome** — the M365 Conditional
+Access nightmare does not apply.
 
-```bash
-# Who runs the mail?
-dig +short MX your-university.edu
-#   *.protection.outlook.com   → Microsoft 365
-#   aspmx.l.google.com         → Google Workspace
-#   anything else              → likely plain IMAP
-
-# Does IMAP actually work?
-openssl s_client -connect outlook.office365.com:993 -crlf -quiet
-# then:  a1 LOGIN you@uni.edu yourpassword
+```
+MX     1 aspmx.l.google.com          ← Google Workspace, definitively
+       5 alt1/alt2.aspmx.l.google.com
+SPF    v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all
+TXT    MS=ms59884092
+DMARC  v=DMARC1; p=reject; adkim=s; aspf=s
+autodiscover.vitstudent.ac.in        → none
+enterpriseregistration.…             → none
 ```
 
-Also check the university IT portal for "app password", "IMAP settings", or "third-party
-mail client".
+Note the SPF includes **both** Google and Outlook, and there is an `MS=` tenant marker —
+so VIT has a Microsoft tenant too. But the absence of `autodiscover` / `enterprise-
+registration` CNAMEs plus Google-only MX means **mailboxes live in Google**. Microsoft is
+almost certainly just licensing/SSO or a sending path for some campus system. Ingest from
+Google.
 
-**If M365 blocks IMAP via Conditional Access** (extremely common), in order:
+### Two integration paths
 
-1. **Graph API with delegated permissions** using the pre-consented *Microsoft Graph
-   Command Line Tools* public client ID — works in many tenants without admin consent.
-   Try this first.
-2. **Own Azure app registration** — needs IT admin consent, which you may not get.
-3. **Forward to a mailbox you control** (Fastmail, or self-hosted) via an Outlook Web
-   rule, and ingest from there. Some tenants also block external forwarding.
+| | Gmail API + OAuth | IMAP + App Password |
+|---|---|---|
+| Survives tenant hardening | ✅ usually | ❌ often disabled first |
+| Incremental sync | ✅ `history.list` from a stored `historyId` | ⚠️ UIDVALIDITY/UIDNEXT bookkeeping |
+| Real push | ✅ `users.watch` → Pub/Sub | IMAP IDLE (a held connection) |
+| Setup cost | Google Cloud project + OAuth consent | ~zero, if permitted |
 
-**Test this in week 1, not week 13.** If all three fail, the email module needs a
-different design and you want to know that before building around it.
+**Recommended: Gmail API, `gmail.readonly` scope, desktop OAuth flow.** Store the refresh
+token in `.env`. Poll `history.list` against a persisted `historyId` for cheap incremental
+sync; add `users.watch` + Pub/Sub later if polling latency ever matters. Read-only scope
+enforces §7.3's "no sending" boundary at the API level rather than by convention.
+
+### The one remaining unknown — a 30-second check
+
+Both paths depend on VIT's Workspace admin policy, which DNS cannot reveal:
+
+1. Open **https://myaccount.google.com/apppasswords** signed in as the VIT account.
+   - Loads → IMAP + app password works. Fastest possible v1.
+   - Blocked → app passwords are off; use the Gmail API.
+2. Gmail → Settings → **Forwarding and POP/IMAP** → is "Enable IMAP" present?
+3. Admins can also block unverified third-party OAuth apps. If the OAuth consent screen
+   errors with *"access blocked: this app is blocked"*, the tenant restricts app access.
+
+**If both are locked down:** set a Gmail filter to auto-forward to a mailbox you control
+and ingest from there — but VIT's `p=reject` DMARC with strict alignment means forwarded
+mail may fail SPF/DKIM at the destination, so the receiving mailbox must be lenient about
+forwarded mail. Test before relying on it.
 
 ---
 
@@ -680,9 +701,28 @@ denied under enforcing. Already applied to `caddy.container`.
 2026-07-24), and the VM was migrated between hosts on 2026-07-22. The weekly backup is a
 useful floor, but it does not replace §10 — it is provider-local and not restore-tested.
 
+### Garage S3 hot tier — live
+
+Single-node Garage `v1.0.1` as a podman quadlet, zone `vps`, **capacity capped at 20 GB**
+of the 50 GB disk per §3.1. Bucket `badal-hot`, key `badal-api` (read/write/owner).
+Verified with a real S3 `PUT` + `LIST` round-trip.
+
+**Bound to loopback only** (`127.0.0.1:3900` API, `:3903` admin) — not reachable from the
+internet even though the firewall would allow nothing anyway. When the laptop joins over
+Tailscale, the bind moves to the tailnet interface, *not* to `0.0.0.0`.
+
+Credentials are in `.env` (`S3_HOT_*`) and on the box at `/root/.garage-badal-api.creds`.
+
+### Hostinger backups: read-only via API
+
+`GET .../backups` lists them; **`POST` is not supported** (405 — `GET, HEAD` only). Weekly
+automatic snapshots continue on their own, and a manual one can only be triggered from
+hPanel. They remain a useful floor but are provider-local, weekly, and not restore-tested —
+they do not replace §10.
+
 ### Remaining in Phase 0
-Postgres · Backblaze B2 bucket + restic backups + first restore drill · ntfy ·
-VictoriaMetrics · Tailscale · **§11 mail diagnostics**
+Postgres · restic backups + first restore drill · ntfy · VictoriaMetrics · Tailscale ·
+laptop Garage archive tier
 
 ---
 
