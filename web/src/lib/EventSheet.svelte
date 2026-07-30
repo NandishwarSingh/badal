@@ -145,11 +145,7 @@
 ></div>
 
 <div class="sheet" class:closing role="dialog" aria-modal="true">
-	<!-- Sticky so the close button stays reachable however far the source
-	     email below is scrolled. -->
-	<div class="sheet-head">
-		<button class="sheet-x" onclick={close} aria-label="Close">✕</button>
-	</div>
+	<div class="sheet-head"></div>
 
 	{#if !editing}
 		<div class="row" style="align-items:flex-start">
@@ -215,6 +211,7 @@
 				<button style="flex:1" onclick={() => (editing = true)} disabled={!!busy}>Edit</button>
 				<button class="danger" onclick={remove} disabled={!!busy}>Delete</button>
 			</div>
+			<button class="sheet-close" onclick={close}>Close</button>
 		</div>
 	{:else}
 		<h2 style="margin-bottom:12px">Edit event</h2>
@@ -235,6 +232,7 @@
 				{#if busy === 'save'}<span class="spinner"></span>{/if} Save
 			</button>
 			<button onclick={() => (editing = false)} disabled={!!busy}>Cancel</button>
+			<button class="sheet-close" onclick={close}>Close</button>
 		</div>
 	{/if}
 </div>

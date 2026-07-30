@@ -177,6 +177,8 @@
 	<div class="empty">Loading…</div>
 
 {:else if view === 'calendar'}
+	<div class="calwrap">
+	<div class="calcol">
 	<div class="calhead">
 		<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
 		<strong>{cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
@@ -211,6 +213,8 @@
 		{/each}
 	</div>
 
+	</div>
+	<div class="calcol agenda">
 	<h3 class="agenda-h">{fmtDay(selected)}</h3>
 	{#if dayEvents.length === 0}
 		<p class="muted" style="padding:8px 2px">Nothing scheduled.</p>
@@ -232,6 +236,8 @@
 			</button>
 		{/each}
 	{/if}
+		</div>
+	</div>
 
 {:else if view === 'mail'}
 	{#if messages.length === 0}

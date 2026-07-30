@@ -65,6 +65,7 @@
 		<p>Tap <strong>Capture</strong> to write your first note.</p>
 	</div>
 {:else}
+	<div class="cards">
 	{#each notes as n, i (n.slug)}
 		<a
 			class="card"
@@ -84,6 +85,7 @@
 			</div>
 		</a>
 	{/each}
+	</div>
 {/if}
 
 <button class="fab" onclick={() => goto('/new')} aria-label="New note">+</button>

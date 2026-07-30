@@ -32,6 +32,7 @@
 	<p class="muted" style="margin:0 2px 12px">
 		Two devices edited the same note. Open each to see what changed and pick a side.
 	</p>
+	<div class="cards">
 	{#each items as c (c.id)}
 		<a class="card" href="/note/{c.note?.slug ?? ''}">
 			<div class="row">
@@ -42,4 +43,5 @@
 			<p>{(c.incoming_body || '').slice(0, 130)}</p>
 		</a>
 	{/each}
+	</div>
 {/if}

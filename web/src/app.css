@@ -1008,30 +1008,7 @@ textarea {
 	display: flex;
 	align-items: center;
 	justify-content: flex-end;
-	min-height: 42px;
-	/* Reserves the row so the title never sits under the close button. */
-}
-
-.sheet-x {
-	position: absolute;
-	right: 10px;
-	top: 2px;
-	width: 40px;
-	height: 40px;
-	min-height: 40px;
-	padding: 0;
-	border-radius: 50%;
-	font-size: 15px;
-	color: var(--muted);
-	background: rgba(255, 255, 255, 0.06);
-	background-image: none;
-	border: 1px solid var(--edge);
-	box-shadow: none;
-}
-@keyframes sheetup {
-	from {
-		transform: translate3d(0, 100%, 0);
-	}
+	min-height: 14px;
 }
 
 @media (min-width: 720px) {
@@ -1189,4 +1166,138 @@ select {
 .sw:checked::after {
 	transform: translateX(20px);
 	background: #fff;
+}
+
+/* ============================================================== desktop
+ *
+ * Everything above is the phone layout. These rules give a large screen
+ * something to do with the space rather than rendering a 400px column in the
+ * middle of a monitor.
+ */
+
+@media (min-width: 900px) {
+	main {
+		max-width: 1120px;
+		padding-left: 24px;
+		padding-right: 24px;
+	}
+
+	.topbar {
+		padding-left: 24px;
+		padding-right: 24px;
+		min-height: 62px;
+	}
+	.topbar h1 {
+		font-size: 24px;
+	}
+
+	/* Notes and search become a card grid. A single column of 1100px-wide
+	   cards is unreadable -- lines get far too long. */
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+		gap: 11px;
+		align-items: start;
+	}
+	.cards .card {
+		margin-bottom: 0;
+	}
+
+	/* Calendar: month on the left, the day's agenda beside it, so choosing a
+	   day does not push the grid off screen. */
+	.calwrap {
+		display: grid;
+		grid-template-columns: minmax(380px, 1fr) minmax(340px, 420px);
+		gap: 24px;
+		align-items: start;
+	}
+	.calcol.agenda {
+		position: sticky;
+		top: 78px;
+		max-height: calc(100dvh - 110px);
+		overflow-y: auto;
+	}
+	.grid {
+		padding: 12px;
+		gap: 4px;
+	}
+	.day {
+		font-size: 14px;
+		border-radius: 11px;
+	}
+	.dot {
+		width: 5.5px;
+		height: 5.5px;
+	}
+
+	.seg {
+		width: max-content;
+		min-width: 380px;
+	}
+
+	.sheet-actions {
+		grid-template-columns: 1fr 1fr;
+	}
+	.sheet-actions > button:first-child,
+	.sheet-actions > .sheet-close {
+		grid-column: 1 / -1;
+	}
+}
+
+/* On a pointer device the sheet should be a centred dialog, not a panel
+   hanging off the bottom edge -- there is no thumb to reach with. */
+@media (min-width: 900px) and (pointer: fine) {
+	.sheet {
+		top: 50%;
+		bottom: auto;
+		left: 50%;
+		right: auto;
+		width: 620px;
+		max-height: 82dvh;
+		border-radius: 20px;
+		border: 1px solid var(--edge-hi);
+		transform: translate(-50%, -50%);
+		animation: dialogin 0.2s var(--ease) both;
+		padding-bottom: 20px;
+	}
+	@keyframes dialogin {
+		from {
+			opacity: 0;
+			transform: translate(-50%, -47%) scale(0.97);
+		}
+	}
+	.sheet.closing {
+		animation: dialogout 0.18s var(--ease) both;
+	}
+	@keyframes dialogout {
+		to {
+			opacity: 0;
+			transform: translate(-50%, -47%) scale(0.97);
+		}
+	}
+	.sheet-head {
+		background: transparent;
+	}
+}
+
+@media (min-width: 1240px) {
+	main {
+		max-width: 1240px;
+	}
+	.calwrap {
+		grid-template-columns: minmax(460px, 1fr) 440px;
+	}
+}
+
+
+/* Full-width and last in the stack, so it is the closest thing to the thumb
+   when the sheet is open. */
+.sheet-close {
+	width: 100%;
+	margin-top: 2px;
+	color: var(--muted);
+	background: none;
+	background-image: none;
+	border-color: var(--edge);
+	box-shadow: none;
 }
