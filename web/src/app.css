@@ -22,7 +22,11 @@
 	);
 	--edge: rgba(255, 255, 255, 0.1);
 	--edge-hi: rgba(255, 255, 255, 0.22);
-	--blur: blur(28px) saturate(190%);
+	--blur: blur(24px) saturate(180%);
+	/* Flat translucent fills used everywhere backdrop-filter was too costly. */
+	--card-fill: rgba(24, 26, 32, 0.62);
+	--card-fill-hi: rgba(38, 41, 49, 0.78);
+	--field-fill: rgba(20, 22, 27, 0.7);
 
 	--text: #f2f4f7;
 	--muted: #7f8794;
@@ -84,30 +88,19 @@ body::before {
 	inset: -25%;
 	z-index: -1;
 	pointer-events: none;
+	/* Soft stops instead of filter: blur() -- a blurred full-screen layer is
+	   repainted every frame, and animating it made tab changes stutter. */
 	background:
-		radial-gradient(50% 40% at 18% 8%, rgba(70, 120, 255, 0.14), transparent 70%),
-		radial-gradient(45% 38% at 88% 22%, rgba(150, 80, 255, 0.1), transparent 70%),
-		radial-gradient(55% 45% at 50% 108%, rgba(0, 190, 190, 0.09), transparent 70%);
-	filter: blur(48px);
-	animation: drift 26s var(--ease) infinite alternate;
-}
-
-@keyframes drift {
-	0% {
-		transform: translate3d(0, 0, 0) scale(1);
-	}
-	100% {
-		transform: translate3d(2%, -2.5%, 0) scale(1.07);
-	}
+		radial-gradient(60% 48% at 18% 6%, rgba(70, 120, 255, 0.13), transparent 72%),
+		radial-gradient(55% 46% at 88% 20%, rgba(150, 80, 255, 0.09), transparent 72%),
+		radial-gradient(65% 52% at 50% 106%, rgba(0, 190, 190, 0.08), transparent 72%);
 }
 
 /* ------------------------------------------------------------- surfaces */
 
 .glass {
 	position: relative;
-	background: var(--glass-fill);
-	backdrop-filter: var(--blur);
-	-webkit-backdrop-filter: var(--blur);
+	background: var(--card-fill);
 	border: 1px solid var(--edge);
 	border-radius: var(--r);
 	box-shadow:
@@ -258,26 +251,29 @@ main {
 	min-height: 58px;
 	text-decoration: none;
 	color: inherit;
-	background: var(--glass-fill);
-	backdrop-filter: var(--blur);
-	-webkit-backdrop-filter: var(--blur);
+	/* No backdrop-filter here: one per card meant a full-screen blur pass per
+	   row, which is what made scrolling and tab changes stutter. */
+	background: var(--card-fill);
 	border: 1px solid var(--edge);
 	border-radius: var(--r);
 	box-shadow:
 		0 8px 26px rgba(0, 0, 0, 0.5),
 		inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	contain: content;
 	transition:
 		transform 0.32s var(--spring),
 		border-color 0.3s var(--ease),
 		background 0.3s var(--ease);
 	/* Entry animation for lists; stagger comes from an inline delay. */
-	animation: rise 0.44s var(--ease) both;
+	animation: rise 0.3s var(--ease) both;
 }
 
 @keyframes rise {
 	from {
 		opacity: 0;
-		transform: translateY(11px) scale(0.985);
+		/* translate only -- animating scale on a bordered, shadowed box forces
+		   a repaint of both every frame. */
+		transform: translateY(8px);
 	}
 	to {
 		opacity: 1;
@@ -296,7 +292,7 @@ main {
 
 .card:active {
 	transform: scale(0.975);
-	background: var(--glass-fill-hi);
+	background: var(--card-fill-hi);
 	border-color: var(--edge-hi);
 }
 
@@ -304,7 +300,7 @@ main {
    change -- the list should not shift hue while you are reading it. */
 .card.pending {
 	animation:
-		rise 0.44s var(--ease) both,
+		rise 0.3s var(--ease) both,
 		breathe 2.2s var(--ease) infinite;
 }
 
@@ -391,9 +387,7 @@ button,
 	font-size: 15px;
 	border-radius: 13px;
 	border: 1px solid var(--edge);
-	background: var(--glass-fill);
-	backdrop-filter: blur(14px) saturate(170%);
-	-webkit-backdrop-filter: blur(14px) saturate(170%);
+	background: var(--card-fill);
 	color: var(--text);
 	padding: 12px 16px;
 	min-height: 46px;
@@ -413,7 +407,7 @@ button,
 button:active,
 .btn:active {
 	transform: scale(0.955);
-	background: var(--glass-fill-hi);
+	background: var(--card-fill-hi);
 }
 
 button.primary,
@@ -449,9 +443,7 @@ textarea {
 	font-size: 16px;
 	width: 100%;
 	color: var(--text);
-	background: rgba(255, 255, 255, 0.045);
-	backdrop-filter: blur(14px);
-	-webkit-backdrop-filter: blur(14px);
+	background: var(--field-fill);
 	border: 1px solid var(--edge);
 	border-radius: 13px;
 	padding: 13px 14px;
@@ -468,7 +460,7 @@ textarea::placeholder {
 input:focus,
 textarea:focus {
 	border-color: rgba(91, 157, 255, 0.5);
-	background: rgba(255, 255, 255, 0.065);
+	background: rgba(255, 255, 255, 0.07);
 	box-shadow: 0 0 0 4px rgba(91, 157, 255, 0.11);
 }
 
@@ -594,8 +586,6 @@ textarea {
 	margin-bottom: 12px;
 	font-size: 14px;
 	border: 1px solid;
-	backdrop-filter: blur(18px);
-	-webkit-backdrop-filter: blur(18px);
 	animation: rise 0.4s var(--ease) both;
 }
 .banner.warn {
@@ -632,9 +622,7 @@ textarea {
 	border-radius: 999px;
 	font-size: 13.5px;
 	font-weight: 560;
-	background: var(--glass-fill-hi);
-	backdrop-filter: var(--blur);
-	-webkit-backdrop-filter: var(--blur);
+	background: var(--card-fill-hi);
 	border: 1px solid var(--edge-hi);
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
 	animation: toastin 0.4s var(--spring) both;
@@ -753,45 +741,45 @@ textarea {
 }
 
 ::view-transition-group(root) {
-	animation-duration: 0.34s;
+	animation-duration: 0.22s;
 	animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 html[data-nav='fwd']::view-transition-old(root) {
-	animation: slide-out-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+	animation: slide-out-left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 html[data-nav='fwd']::view-transition-new(root) {
-	animation: slide-in-right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+	animation: slide-in-right 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 html[data-nav='back']::view-transition-old(root) {
-	animation: slide-out-right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+	animation: slide-out-right 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 html[data-nav='back']::view-transition-new(root) {
-	animation: slide-in-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+	animation: slide-in-left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 @keyframes slide-out-left {
 	to {
-		transform: translateX(-22%);
+		transform: translateX(-6%);
 		opacity: 0;
 	}
 }
 @keyframes slide-in-right {
 	from {
-		transform: translateX(100%);
-		opacity: 0.4;
+		transform: translateX(7%);
+		opacity: 0;
 	}
 }
 @keyframes slide-out-right {
 	to {
-		transform: translateX(22%);
+		transform: translateX(6%);
 		opacity: 0;
 	}
 }
 @keyframes slide-in-left {
 	from {
-		transform: translateX(-100%);
-		opacity: 0.4;
+		transform: translateX(-7%);
+		opacity: 0;
 	}
 }
 
