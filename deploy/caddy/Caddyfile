@@ -1,0 +1,45 @@
+{
+	email nandubhai222@gmail.com
+	servers {
+		# HTTP/3 off. QUIC is throttled or blocked on many mobile carriers, and
+		# Safari switches to it after seeing alt-svc -- which shows up as
+		# intermittent "server unreachable" that never reproduces on wifi.
+		protocols h1 h2
+	}
+}
+
+badal.nandishwarsingh.com {
+	encode zstd gzip
+
+	@api path /health /v1/*
+	handle @api {
+		reverse_proxy host.containers.internal:8080 {
+			transport http {
+				read_timeout 10m
+				write_timeout 10m
+			}
+		}
+	}
+
+	handle {
+		root * /srv/badal-web
+		# SPA fallback: client-side routes must resolve to the shell
+		try_files {path} /index.html
+		file_server {
+			precompressed br gzip
+		}
+		header /sw.js Cache-Control "no-cache"
+		header /manifest.webmanifest Cache-Control "no-cache"
+		header /_app/immutable/* Cache-Control "public, max-age=31536000, immutable"
+	}
+}
+
+ntfy.nandishwarsingh.com {
+	encode zstd gzip
+	reverse_proxy ntfy:80 {
+		flush_interval -1
+		transport http {
+			read_timeout 24h
+		}
+	}
+}

@@ -11,8 +11,18 @@ export function getBase() {
 	return localStorage.getItem(BASE_KEY) || window.location.origin;
 }
 export function setCreds(base, token) {
-	localStorage.setItem(BASE_KEY, base.replace(/\/$/, ''));
-	localStorage.setItem(TOKEN_KEY, token);
+	// iOS paste can carry newlines, non-breaking spaces and zero-width chars.
+	// Strip anything that is not part of the token alphabet rather than
+	// failing with an unhelpful 401.
+	const clean = (token || '').replace(/[^A-Za-z0-9_\-]/g, '');
+	localStorage.setItem(BASE_KEY, (base || window.location.origin).trim().replace(/\/+$/, ''));
+	localStorage.setItem(TOKEN_KEY, clean);
+	return clean;
+}
+
+/** What the server actually sees. Used by the in-app diagnostic. */
+export function echo() {
+	return api('/v1/auth/echo');
 }
 export function clearCreds() {
 	localStorage.removeItem(TOKEN_KEY);

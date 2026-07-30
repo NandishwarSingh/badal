@@ -358,6 +358,33 @@ func main() {
 		httpx.JSON(w, 200, map[string]any{"deleted": r.PathValue("path")})
 	}))
 
+	// Diagnostic: reports what the server actually received, without echoing
+	// the credential itself. Cheaper than guessing why a phone sees a 401.
+	mux.HandleFunc("GET /v1/auth/echo", func(w http.ResponseWriter, r *http.Request) {
+		raw := r.Header.Get("Authorization")
+		tok := strings.TrimSpace(strings.TrimPrefix(raw, "Bearer "))
+		out := map[string]any{
+			"authorization_header_present": raw != "",
+			"header_raw_len":               len(raw),
+			"token_len":                    len(tok),
+			"token_prefix":                 firstN(tok, 6),
+			"token_suffix":                 lastN(tok, 4),
+			"has_session_cookie":           false,
+			"token_accepted":               false,
+			"origin":                       r.Header.Get("Origin"),
+			"host":                         r.Host,
+		}
+		if c, err := r.Cookie(passkey.SessionCookie); err == nil && c.Value != "" {
+			out["has_session_cookie"] = true
+		}
+		if tok != "" {
+			if _, err := authSvc.Authenticate(r.Context(), tok); err == nil {
+				out["token_accepted"] = true
+			}
+		}
+		httpx.JSON(w, 200, out)
+	})
+
 	// ------------------------------------------------------------ passkeys
 	if pk != nil {
 		// Whether to show "create a passkey" or "sign in". Unauthenticated by
@@ -668,4 +695,18 @@ func mayEnrol(r *http.Request, pk *passkey.Service, a *auth.Service, secret stri
 		return true
 	}
 	return false
+}
+
+func firstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+func lastN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }

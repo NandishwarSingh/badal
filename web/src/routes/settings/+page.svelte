@@ -1,6 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
-	import { getBase, getToken, setCreds, clearCreds, api } from '$lib/api.js';
+	import { getBase, getToken, setCreds, clearCreds, api, echo } from '$lib/api.js';
 	import { cache, outbox, requestPersistence } from '$lib/store.js';
 	import { state as sync, run, startAutoSync } from '$lib/sync.svelte.js';
 	import {
@@ -25,6 +25,7 @@
 	let base = $state('');
 	let token = $state('');
 	let enrolSecret = $state('');
+	let diag = $state(null);
 
 	const signedIn = $derived(auth.signed_in || tokenSignedIn);
 
@@ -72,10 +73,21 @@
 		await logout(); clearCreds(); await cache.clear(); location.href = '/';
 	}
 
+	async function runDiag() {
+		busy = 'diag'; diag = null; err = '';
+		try {
+			setCreds(base || getBase(), token);
+			diag = await echo();
+		} catch (e) {
+			err = `${e.status ? 'HTTP ' + e.status : 'Network error'} — ${e.message}`;
+		} finally { busy = ''; }
+	}
+
 	async function tokenSignIn() {
 		err = ''; busy = 'token';
 		try {
-			setCreds(base, token.trim());
+			const clean = setCreds(base, token);
+			if (!clean) throw new Error('Token looked empty after cleaning.');
 			await api('/v1/notes');
 			tokenSignedIn = true; token = '';
 			toast('Signed in');
@@ -148,7 +160,19 @@
 		<div style="padding:4px 2px 0">
 			<input bind:value={base} placeholder="https://badal.nandishwarsingh.com" style="margin-bottom:9px" />
 			<input bind:value={token} placeholder="bdl_…" type="password" style="margin-bottom:11px" />
-			<button style="width:100%" onclick={tokenSignIn} disabled={busy === 'token' || !token.trim()}>Sign in</button>
+			<div class="row">
+				<button style="flex:1" onclick={tokenSignIn} disabled={busy === 'token' || !token.trim()}>Sign in</button>
+				<button class="ghost" onclick={runDiag} disabled={busy === 'diag'}>Diagnose</button>
+			</div>
+			{#if diag}
+				<div class="banner info" style="margin-top:11px;font-family:ui-monospace;font-size:12px">
+					sent header: {diag.authorization_header_present ? 'yes' : 'NO'}<br />
+					token length: {diag.token_len} (expected 47)<br />
+					looks like: {diag.token_prefix}…{diag.token_suffix}<br />
+					server accepted: {diag.token_accepted ? 'YES' : 'no'}<br />
+					session cookie: {diag.has_session_cookie ? 'yes' : 'no'}
+				</div>
+			{/if}
 		</div>
 	</details>
 
