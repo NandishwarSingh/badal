@@ -1,26 +1,21 @@
 #!/bin/bash
-# Keep the Mac available as a badal worker while on AC, without flattening
-# the battery when it is unplugged.
+# Keep the Mac reachable as a badal worker at all times.
 #
 # pmset's `disablesleep` is the only setting that overrides lid-close sleep,
-# and it accepts only -a (all power sources) -- it cannot be scoped to AC
-# declaratively. This daemon does that scoping: on AC the machine stays fully
-# awake with the lid shut; on battery normal Mac behaviour returns.
+# and it accepts only -a (all power sources). That is what we want here: the
+# worker should be claimable whether or not the charger is in.
+#
+# The consequence is real and deliberate -- an unplugged Mac with the lid shut
+# will keep running and will flatten. Plug in, or expect the battery to go.
+#
+# This runs as a daemon rather than a one-shot pmset because macOS resets
+# these across major updates and some power events.
 set -u
-STATE=""
 while true; do
-  if pmset -g ps 2>/dev/null | head -1 | grep -q "AC Power"; then WANT=1; else WANT=0; fi
-  if [ "$WANT" != "$STATE" ]; then
-    pmset -a disablesleep "$WANT" 2>/dev/null
-    if [ "$WANT" = "1" ]; then
-      # plugged in: never idle-sleep, let the display sleep, keep disks spinning
-      pmset -c sleep 0 displaysleep 5 disksleep 0 womp 1 2>/dev/null
-      logger -t badal-power "on AC — sleep disabled, worker available"
-    else
-      pmset -c sleep 1 2>/dev/null
-      logger -t badal-power "on battery — normal sleep restored"
-    fi
-    STATE="$WANT"
-  fi
-  sleep 30
+  # Never sleep, on either power source.
+  pmset -a disablesleep 1 2>/dev/null
+  # Idle sleep off on both; let the display sleep, which costs nothing.
+  pmset -c sleep 0 displaysleep 5 disksleep 0 womp 1 2>/dev/null
+  pmset -b sleep 0 displaysleep 3 disksleep 0 2>/dev/null
+  sleep 300
 done

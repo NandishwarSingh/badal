@@ -35,6 +35,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/store"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
+	"github.com/NandishwarSingh/badal/internal/vision"
 )
 
 const maxChunkBytes = 8 << 20 // headroom over the 4MB FastCDC max
@@ -126,6 +127,7 @@ func main() {
 	}
 
 	calSvc := calendar.New(st.Pool)
+	visSvc := vision.New(os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_VISION_MODEL"))
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
 		os.Getenv("BADAL_EXTRACT_MODEL"), env("BADAL_TZ", "Asia/Kolkata"))
 	if !exSvc.Enabled() {
@@ -835,6 +837,23 @@ func main() {
 				// here is not fatal -- the message body is still extracted.
 				if txt, err := mailSvc.AttachmentText(r.Context(), m.ID, 6000); err == nil && txt != "" {
 					body += "\n\n[ATTACHMENTS]\n" + txt
+				}
+				// Posters. The Mac worker is preferred once it exists, since
+				// the image never leaves the network; until a worker claims
+				// the job this goes straight to the cheap cloud model rather
+				// than leaving the poster unread.
+				if visSvc.Enabled() {
+					imgs, _ := mailSvc.Images(r.Context(), m.ID, 3, 12000)
+					for _, img := range imgs {
+						txt, err := visSvc.OCR(r.Context(), img.Data, img.MIME)
+						if err != nil {
+							slog.Warn("ocr", "msg", m.ID, "file", img.Filename, "err", err)
+							continue
+						}
+						if strings.TrimSpace(txt) != "" {
+							body += "\n\n[IMAGE " + img.Filename + "]\n" + txt
+						}
+					}
 				}
 				res, err := exSvc.Extract(r.Context(), extract.Message{
 					ID: m.ID, Subject: m.Subject, FromName: m.FromName,
