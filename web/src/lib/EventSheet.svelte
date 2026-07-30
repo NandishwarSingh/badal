@@ -145,8 +145,6 @@
 ></div>
 
 <div class="sheet" class:closing role="dialog" aria-modal="true">
-	<div class="sheet-head"></div>
-
 	{#if !editing}
 		<div class="row" style="align-items:flex-start">
 			<h2>{e.title}</h2>

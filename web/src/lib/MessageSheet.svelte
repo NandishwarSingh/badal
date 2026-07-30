@@ -64,12 +64,18 @@
 ></div>
 
 <div class="sheet" class:closing role="dialog" aria-modal="true">
-	<div class="sheet-head"></div>
-
 	{#if err}
 		<div class="banner err">{err}</div>
 	{:else if !msg}
-		<div class="empty">Loading…</div>
+		<div class="sheet-skeleton">
+			<div class="sk" style="width:78%;height:20px"></div>
+			<div class="sk" style="width:46%;margin-bottom:22px"></div>
+			<div class="sk" style="width:100%"></div>
+			<div class="sk" style="width:94%"></div>
+			<div class="sk" style="width:88%"></div>
+			<div class="sk" style="width:97%"></div>
+			<div class="sk" style="width:62%"></div>
+		</div>
 	{:else}
 		<h2 class="mail-subject">{msg.subject || '(no subject)'}</h2>
 

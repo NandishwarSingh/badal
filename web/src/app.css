@@ -49,6 +49,10 @@
 	--r: 16px;
 
 	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+	/* Sheets get their own curves: a soft overshoot-free decelerate on entry,
+	   a sharper accelerate on exit. */
+	--sheet-ease: cubic-bezier(0.16, 0.84, 0.28, 1);
+	--sheet-exit: cubic-bezier(0.5, 0, 0.75, 0);
 	--tabbar: 60px;
 	--safe-b: env(safe-area-inset-bottom, 0px);
 	--safe-t: env(safe-area-inset-top, 0px);
@@ -957,7 +961,9 @@ textarea {
 	z-index: 70;
 	background: rgba(0, 0, 0, 0.66);
 	border: none;
-	animation: fadein 0.16s var(--ease) both;
+	/* Matched to the sheet so the backdrop does not finish before the panel
+	   has arrived. */
+	animation: fadein 0.34s var(--ease) both;
 }
 @keyframes fadein {
 	from {
@@ -966,7 +972,7 @@ textarea {
 }
 
 .sheet-scrim.closing {
-	animation: fadeout 0.22s var(--ease) both;
+	animation: fadeout 0.26s var(--ease) both;
 }
 @keyframes fadeout {
 	to {
@@ -985,7 +991,7 @@ textarea {
 	max-height: 82dvh;
 	overflow-y: auto;
 	-webkit-overflow-scrolling: touch;
-	padding: 0 17px calc(env(safe-area-inset-bottom, 0px) + 20px);
+	padding: 20px 17px calc(env(safe-area-inset-bottom, 0px) + 20px);
 	touch-action: pan-y;
 	border-radius: 22px 22px 0 0;
 	background-color: #101216;
@@ -993,22 +999,26 @@ textarea {
 	border-top: 1px solid var(--edge-hi);
 	box-shadow: var(--rim), 0 -8px 30px rgba(0, 0, 0, 0.7);
 	/* transform only -- the compositor handles it without repainting */
-	animation: sheetup 0.24s var(--ease) both;
+	animation: sheetup 0.34s var(--sheet-ease) both;
 }
 
-/* Sticky so the close button and handle stay reachable however far the
-   content is scrolled. */
-.sheet-head {
-	position: sticky;
-	top: 0;
-	z-index: 2;
-	margin: 0 -17px 6px;
-	padding: 6px 17px 8px;
-	background: #101216;
-	display: flex;
-	align-items: center;
-	justify-content: flex-end;
-	min-height: 14px;
+@keyframes sheetup {
+	from {
+		transform: translate3d(0, 100%, 0);
+	}
+}
+
+/* Mirrors the entrance. Transform only, so it costs the compositor nothing.
+   Exit is a touch quicker than entry: leaving should feel decisive, arriving
+   should feel settled. */
+.sheet.closing {
+	animation: sheetdown 0.26s var(--sheet-exit) both;
+}
+
+@keyframes sheetdown {
+	to {
+		transform: translate3d(0, 100%, 0);
+	}
 }
 
 @media (min-width: 720px) {
@@ -1257,7 +1267,7 @@ select {
 		border-radius: 20px;
 		border: 1px solid var(--edge-hi);
 		transform: translate(-50%, -50%);
-		animation: dialogin 0.2s var(--ease) both;
+		animation: dialogin 0.26s var(--sheet-ease) both;
 		padding-bottom: 20px;
 	}
 	@keyframes dialogin {
@@ -1267,16 +1277,13 @@ select {
 		}
 	}
 	.sheet.closing {
-		animation: dialogout 0.18s var(--ease) both;
+		animation: dialogout 0.2s var(--sheet-exit) both;
 	}
 	@keyframes dialogout {
 		to {
 			opacity: 0;
 			transform: translate(-50%, -47%) scale(0.97);
 		}
-	}
-	.sheet-head {
-		background: transparent;
 	}
 }
 
@@ -1407,4 +1414,25 @@ select {
 }
 .mail-body br {
 	line-height: 1.9;
+}
+
+
+/* The sheet animates in before its fetch resolves. Without a placeholder the
+   panel slides up empty and then jumps to full height, which reads as no
+   animation at all. */
+.sheet-skeleton {
+	padding: 4px 0 8px;
+}
+.sk {
+	height: 13px;
+	border-radius: 7px;
+	background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+	background-size: 220% 100%;
+	animation: shimmer 1.4s linear infinite;
+	margin-bottom: 11px;
+}
+@keyframes shimmer {
+	to {
+		background-position: -220% 0;
+	}
 }
