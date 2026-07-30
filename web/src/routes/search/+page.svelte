@@ -49,7 +49,15 @@
 		if (q.trim()) go();
 	}
 
-	const href = (h) => (h.source_type === 'note' && h.slug ? `/note/${h.slug}` : '/calendar');
+	// Every result type needs somewhere real to land. Sending mail and events
+	// to a bare /calendar switched the tab and opened nothing, which is most
+	// of the corpus.
+	function href(h) {
+		if (h.source_type === 'note' && h.slug) return `/note/${h.slug}`;
+		if (h.source_type === 'event') return `/calendar?event=${h.source_id}`;
+		if (h.source_type === 'message') return `/calendar?mail=${h.source_id}`;
+		return '/calendar';
+	}
 	const icon = { note: 'note', message: 'mail', event: 'event' };
 </script>
 

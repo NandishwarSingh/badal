@@ -3,6 +3,9 @@
 	import { Cal, Mail, Jobs } from '$lib/api.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import EventSheet from '$lib/EventSheet.svelte';
+	import MessageSheet from '$lib/MessageSheet.svelte';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 
 	let view = $state('calendar'); // calendar | mail | review
 	let loading = $state(true);
@@ -18,6 +21,7 @@
 	let busy = $state('');
 	let sheet = $state(null);
 	let jobs = $state(null);
+	let mailSheet = $state(null);
 
 	function startOfDay(d) {
 		const x = new Date(d);
@@ -57,7 +61,33 @@
 		}
 	}
 
-	onMount(loadAll);
+	onMount(async () => {
+		await loadAll();
+		// Deep links from search: ?event=<id> opens that event, ?mail=<id> opens
+		// the message. Without this a search result could only switch tabs.
+		const q = page.url.searchParams;
+		const ev = q.get('event');
+		const ml = q.get('mail');
+		if (ml) {
+			view = 'mail';
+			mailSheet = ml;
+		} else if (ev) {
+			// May be outside the loaded month, so fall back to fetching it.
+			const found =
+				events.find((e) => e.id === ev) ||
+				proposed.find((e) => e.id === ev) ||
+				(await Cal.get(ev).catch(() => null));
+			if (found) {
+				sheet = found;
+				// Jump the calendar to the month the event is in, or opening it
+				// leaves the grid showing an unrelated month behind the sheet.
+				cursor = new Date(found.starts_at);
+				selected = startOfDay(new Date(found.starts_at));
+				await loadMonth();
+			}
+		}
+		if (ev || ml) replaceState('/calendar', {});
+	});
 
 	// Events grouped by local day. Doing this once beats filtering per cell.
 	const byDay = $derived.by(() => {
@@ -261,7 +291,8 @@
 		<div class="empty">No mail yet.</div>
 	{:else}
 		{#each messages as m (m.id)}
-			<div class="card" style="min-height:0">
+			<button class="card" style="min-height:0;width:100%;text-align:left"
+				onclick={() => (mailSheet = m.id)}>
 				<div class="row">
 					<strong style="font-size:15px">{m.from_name || m.from_addr}</strong>
 					<span class="spacer"></span>
@@ -272,7 +303,7 @@
 				{#if !m.extracted}
 					<span class="pill warn" style="margin-top:6px;display:inline-block">not scanned</span>
 				{/if}
-			</div>
+			</button>
 		{/each}
 	{/if}
 
@@ -321,6 +352,10 @@
 			</div>
 		{/each}
 	{/if}
+{/if}
+
+{#if mailSheet}
+	<MessageSheet id={mailSheet} onclose={() => (mailSheet = null)} />
 {/if}
 
 {#if sheet}

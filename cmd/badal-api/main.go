@@ -901,6 +901,26 @@ func main() {
 		httpx.JSON(w, 201, out)
 	}))
 
+	// Fetch one event regardless of the loaded window, so a search result for
+	// something months away still opens.
+	mux.Handle("GET /v1/events/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		e, err := calSvc.Get(r.Context(), id)
+		if errors.Is(err, calendar.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "get_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, e)
+	}))
+
 	mux.Handle("POST /v1/events/{id}/state", authed(func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(r.PathValue("id"))
 		if err != nil {

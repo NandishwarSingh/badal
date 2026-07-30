@@ -80,6 +80,7 @@ export const Cal = {
 	range: (from, to) =>
 		api(`/v1/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
 	proposed: () => api('/v1/events/proposed'),
+	get: (id) => api(`/v1/events/${id}`),
 	setState: (id, state) => api(`/v1/events/${id}/state`, { method: 'POST', body: { state } }),
 	confirmAll: () => api('/v1/events/confirm-all', { method: 'POST' }),
 	patch: (id, p) => api(`/v1/events/${id}`, { method: 'PATCH', body: p }),
