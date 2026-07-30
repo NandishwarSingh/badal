@@ -22,10 +22,13 @@ export function isSignedIn() {
 }
 
 export class ApiError extends Error {
-	constructor(status, body) {
-		super(body?.error || body?.detail || `HTTP ${status}`);
+	constructor(status, body, url) {
+		// Include status and URL: "rejected" with no detail is unfixable from
+		// a phone, where there are no devtools to open.
+		super(body?.detail || body?.error || `HTTP ${status}`);
 		this.status = status;
 		this.body = body;
+		this.url = url;
 	}
 }
 
@@ -49,7 +52,7 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
 	} catch {
 		/* non-JSON error page */
 	}
-	if (!res.ok) throw new ApiError(res.status, json);
+	if (!res.ok) throw new ApiError(res.status, json, getBase() + path);
 	return json;
 }
 

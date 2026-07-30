@@ -47,7 +47,14 @@ export async function subscribePush() {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(sub.toJSON())
 	});
-	if (!res.ok) throw new Error('Server rejected the subscription.');
+	if (!res.ok) {
+		const j = await res.json().catch(() => null);
+		throw new Error(
+			res.status === 401
+				? 'Sign in first — the subscription is tied to your session.'
+				: `Server rejected the subscription (HTTP ${res.status}${j?.detail ? ': ' + j.detail : ''}).`
+		);
+	}
 	return true;
 }
 

@@ -82,7 +82,10 @@
 			await requestPersistence(); startAutoSync(); await refresh();
 		} catch (e) {
 			clearCreds();
-			err = e.status === 401 ? 'That token was rejected.' : e.message || 'Could not connect.';
+			// Say which request failed and why -- there are no devtools on a phone.
+			err = `${e.status ? 'HTTP ' + e.status : 'Network error'} from ${e.url || base}` +
+				(e.status === 401 ? ' — token not accepted. Check for a missing character when pasting.' :
+				 e.status ? ` — ${e.message}` : ' — is the server reachable?');
 		} finally { busy = ''; }
 	}
 
@@ -92,7 +95,7 @@
 			if (push.subscribed) { await unsubscribePush(); toast('Notifications off'); }
 			else { await subscribePush(); toast('Notifications on'); }
 			push = await pushState();
-		} catch (e) { err = e.message; }
+		} catch (e) { err = e.message + (e.status ? ` (HTTP ${e.status})` : ''); }
 		finally { busy = ''; }
 	}
 
@@ -101,7 +104,7 @@
 		try {
 			const r = await sendTestPush();
 			toast(r.sent ? `Sent to ${r.sent} device${r.sent > 1 ? 's' : ''}` : 'No devices subscribed');
-		} catch (e) { err = e.message; }
+		} catch (e) { err = e.message + (e.status ? ` (HTTP ${e.status})` : ''); }
 		finally { busy = ''; }
 	}
 </script>

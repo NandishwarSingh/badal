@@ -6,7 +6,7 @@
 	import { authState } from '$lib/auth.js';
 	import { requestPersistence } from '$lib/store.js';
 	import { state as sync, startAutoSync, run } from '$lib/sync.svelte.js';
-	import { toasts } from '$lib/toast.svelte.js';
+	import { toasts, dismiss } from '$lib/toast.svelte.js';
 
 	let { children } = $props();
 	let ready = $state(false);
@@ -66,6 +66,13 @@
 	</main>
 
 	{#each toasts.items as t (t.id)}
-		<div class="toast">{t.text}</div>
+		<div class="toast" class:actionable={t.actionLabel}>
+			<span>{t.text}</span>
+			{#if t.actionLabel}
+				<button class="toast-action" onclick={() => { t.onAction(); dismiss(t.id); }}>
+					{t.actionLabel}
+				</button>
+			{/if}
+		</div>
 	{/each}
 </div>

@@ -4,8 +4,11 @@
 // network. API calls are never cached here -- IndexedDB is the offline data
 // layer, and a stale cached API response would silently contradict it.
 
-const CACHE = 'badal-shell-v1';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+const CACHE = 'badal-shell-__BUILD__';
+// Deliberately excludes hashed /_app/immutable assets: a deploy deletes the
+// old ones, and pre-caching them means a stale shell references files that
+// no longer exist.
+const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png'];
 
 self.addEventListener('install', (e) => {
 	e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

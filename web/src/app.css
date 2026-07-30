@@ -716,3 +716,80 @@ textarea {
 		animation: none;
 	}
 }
+
+/* ------------------------------------------------------------ swipe rows */
+
+.swipe-row {
+	position: relative;
+	margin-bottom: 10px;
+	border-radius: var(--r);
+	overflow: hidden;
+	/* Let the browser own vertical scrolling; the action claims horizontal
+	   only once it is sure the gesture is sideways. */
+	touch-action: pan-y;
+}
+
+.swipe-row .card {
+	margin-bottom: 0;
+	position: relative;
+	z-index: 2;
+	will-change: transform;
+}
+
+.swipe-bg {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	padding: 0 22px;
+	font-size: 13.5px;
+	font-weight: 640;
+	letter-spacing: 0.01em;
+	border-radius: var(--r);
+	opacity: calc(0.35 + var(--swipe-progress, 0) * 0.65);
+}
+
+.swipe-bg.del {
+	justify-content: flex-end;
+	color: #fff;
+	background: linear-gradient(90deg, rgba(255, 107, 107, 0.1), rgba(220, 60, 60, 0.92));
+}
+.swipe-bg.pin {
+	justify-content: flex-start;
+	color: #06121f;
+	background: linear-gradient(90deg, rgba(255, 196, 83, 0.92), rgba(255, 196, 83, 0.1));
+}
+
+.swipe-bg svg {
+	width: 19px;
+	height: 19px;
+	stroke: currentColor;
+	fill: none;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	margin: 0 8px;
+	transform: scale(calc(0.8 + var(--swipe-progress, 0) * 0.35));
+	transition: transform 0.15s var(--ease);
+}
+
+.toast.actionable {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	pointer-events: auto;
+	padding-right: 7px;
+}
+
+.toast-action {
+	min-height: 0;
+	padding: 5px 13px;
+	font-size: 13px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.14);
+	border: 1px solid var(--edge-hi);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	color: var(--accent);
+}
