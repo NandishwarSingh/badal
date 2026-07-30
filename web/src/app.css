@@ -300,19 +300,21 @@ main {
 	border-color: var(--edge-hi);
 }
 
-/* A write that has not reached the server yet. Shown, not hidden -- the whole
-   point of optimistic UI is that you can trust what you see. */
+/* Not yet on the server. Signalled by a gentle fade rather than a colour
+   change -- the list should not shift hue while you are reading it. */
 .card.pending {
-	animation: rise 0.44s var(--ease) both, breathe 2.4s var(--ease) infinite;
+	animation:
+		rise 0.44s var(--ease) both,
+		breathe 2.2s var(--ease) infinite;
 }
 
 @keyframes breathe {
 	0%,
 	100% {
-		border-color: var(--edge);
+		opacity: 1;
 	}
 	50% {
-		border-color: rgba(255, 196, 83, 0.34);
+		opacity: 0.72;
 	}
 }
 
@@ -717,63 +719,6 @@ textarea {
 	}
 }
 
-/* ------------------------------------------------------------ swipe rows */
-
-.swipe-row {
-	position: relative;
-	margin-bottom: 10px;
-	border-radius: var(--r);
-	overflow: hidden;
-	/* Let the browser own vertical scrolling; the action claims horizontal
-	   only once it is sure the gesture is sideways. */
-	touch-action: pan-y;
-}
-
-.swipe-row .card {
-	margin-bottom: 0;
-	position: relative;
-	z-index: 2;
-	will-change: transform;
-}
-
-.swipe-bg {
-	position: absolute;
-	inset: 0;
-	z-index: 1;
-	display: flex;
-	align-items: center;
-	padding: 0 22px;
-	font-size: 13.5px;
-	font-weight: 640;
-	letter-spacing: 0.01em;
-	border-radius: var(--r);
-	opacity: calc(0.35 + var(--swipe-progress, 0) * 0.65);
-}
-
-.swipe-bg.del {
-	justify-content: flex-end;
-	color: #fff;
-	background: linear-gradient(90deg, rgba(255, 107, 107, 0.1), rgba(220, 60, 60, 0.92));
-}
-.swipe-bg.pin {
-	justify-content: flex-start;
-	color: #06121f;
-	background: linear-gradient(90deg, rgba(255, 196, 83, 0.92), rgba(255, 196, 83, 0.1));
-}
-
-.swipe-bg svg {
-	width: 19px;
-	height: 19px;
-	stroke: currentColor;
-	fill: none;
-	stroke-width: 2;
-	stroke-linecap: round;
-	stroke-linejoin: round;
-	margin: 0 8px;
-	transform: scale(calc(0.8 + var(--swipe-progress, 0) * 0.35));
-	transition: transform 0.15s var(--ease);
-}
-
 .toast.actionable {
 	display: flex;
 	align-items: center;
@@ -792,4 +737,76 @@ textarea {
 	backdrop-filter: none;
 	-webkit-backdrop-filter: none;
 	color: var(--accent);
+}
+
+
+/* ------------------------------------------------- tab page transitions */
+/*
+ * Swiping between tabs slides the pages horizontally. Direction comes from
+ * data-nav on <html>, set before navigation so forward and back animate the
+ * way the finger moved. The tab bar and toasts are excluded from the
+ * transition so they stay put while the content moves under them.
+ */
+
+@view-transition {
+	navigation: auto;
+}
+
+::view-transition-group(root) {
+	animation-duration: 0.34s;
+	animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+html[data-nav='fwd']::view-transition-old(root) {
+	animation: slide-out-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+html[data-nav='fwd']::view-transition-new(root) {
+	animation: slide-in-right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+html[data-nav='back']::view-transition-old(root) {
+	animation: slide-out-right 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+html[data-nav='back']::view-transition-new(root) {
+	animation: slide-in-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes slide-out-left {
+	to {
+		transform: translateX(-22%);
+		opacity: 0;
+	}
+}
+@keyframes slide-in-right {
+	from {
+		transform: translateX(100%);
+		opacity: 0.4;
+	}
+}
+@keyframes slide-out-right {
+	to {
+		transform: translateX(22%);
+		opacity: 0;
+	}
+}
+@keyframes slide-in-left {
+	from {
+		transform: translateX(-100%);
+		opacity: 0.4;
+	}
+}
+
+.tabbar {
+	view-transition-name: tabbar;
+}
+
+main {
+	will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(root),
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none !important;
+	}
 }

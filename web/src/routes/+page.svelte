@@ -4,22 +4,15 @@
 	import { isSignedIn } from '$lib/api.js';
 	import { authState } from '$lib/auth.js';
 	import { cache } from '$lib/store.js';
-	import { state as sync, run, queuePut, queueDelete } from '$lib/sync.svelte.js';
-	import { toast, toastAction } from '$lib/toast.svelte.js';
-	import { swipe } from '$lib/swipe.js';
+	import { state as sync, run } from '$lib/sync.svelte.js';
 
 	let notes = $state([]);
 	let loading = $state(true);
 
 	async function load() {
-		const all = await cache.all();
-		// Pinned first, then most recently touched.
-		notes = all.sort((a, b) => {
-			const pa = (a.tags || []).includes('pinned') ? 1 : 0;
-			const pb = (b.tags || []).includes('pinned') ? 1 : 0;
-			if (pa !== pb) return pb - pa;
-			return (b.updated_at || '').localeCompare(a.updated_at || '');
-		});
+		notes = (await cache.all()).sort((a, b) =>
+			(b.updated_at || '').localeCompare(a.updated_at || '')
+		);
 		loading = false;
 	}
 
@@ -38,37 +31,6 @@
 		void sync.lastSync;
 		if (!loading) void load();
 	});
-
-	async function del(n) {
-		// Vanish immediately; the queued delete only fires if undo lapses.
-		notes = notes.filter((x) => x.slug !== n.slug);
-		let undone = false;
-		toastAction(`Deleted “${n.title}”`, 'Undo', () => {
-			undone = true;
-			void load();
-		});
-		setTimeout(async () => {
-			if (undone) return;
-			await queueDelete(n.slug);
-			await load();
-		}, 5000);
-	}
-
-	async function togglePin(n) {
-		const tags = new Set(n.tags || []);
-		const pinning = !tags.has('pinned');
-		if (pinning) tags.add('pinned');
-		else tags.delete('pinned');
-		await queuePut({
-			slug: n.slug,
-			title: n.title,
-			body: n.body,
-			tags: [...tags],
-			version: n.version
-		});
-		toast(pinning ? 'Pinned' : 'Unpinned');
-		await load();
-	}
 
 	const preview = (b) => (b || '').replace(/[#*`[\]]/g, '').slice(0, 140);
 	function when(iso) {
@@ -104,41 +66,25 @@
 	</div>
 {:else}
 	{#each notes as n, i (n.slug)}
-		<div class="swipe-row" style="animation-delay:{Math.min(i * 35, 320)}ms">
-			<div class="swipe-bg pin">
-				<svg viewBox="0 0 24 24"><path d="M12 17v5 M9 3h6l-1 7 3 3v2H7v-2l3-3z" /></svg>
-				{(n.tags || []).includes('pinned') ? 'Unpin' : 'Pin'}
+		<a
+			class="card"
+			class:pending={n._dirty}
+			href="/note/{n.slug}"
+			style="animation-delay:{Math.min(i * 35, 320)}ms"
+		>
+			<div class="row">
+				<h3>{n.title}</h3>
+				<span class="spacer"></span>
+				{#if n._dirty}<span class="pill">saving</span>{/if}
 			</div>
-			<div class="swipe-bg del">
-				Delete
-				<svg viewBox="0 0 24 24"
-					><path d="M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3" /></svg
-				>
+			{#if preview(n.body)}<p>{preview(n.body)}</p>{/if}
+			<div class="row" style="margin-top:7px">
+				{#each n.tags || [] as t}<span class="tag">{t}</span>{/each}
+				<span class="spacer"></span>
+				<span class="muted">{when(n.updated_at)}</span>
 			</div>
-			<a
-				class="card"
-				class:pending={n._dirty}
-				href="/note/{n.slug}"
-				use:swipe={{ onLeft: () => del(n), onRight: () => togglePin(n) }}
-			>
-				<div class="row">
-					<h3>{n.title}</h3>
-					<span class="spacer"></span>
-					{#if (n.tags || []).includes('pinned')}<span class="pill warn">pinned</span>{/if}
-					{#if n._dirty}<span class="pill warn">saving</span>{/if}
-				</div>
-				{#if preview(n.body)}<p>{preview(n.body)}</p>{/if}
-				<div class="row" style="margin-top:7px">
-					{#each (n.tags || []).filter((t) => t !== 'pinned') as t}<span class="tag">{t}</span>{/each}
-					<span class="spacer"></span>
-					<span class="muted">{when(n.updated_at)}</span>
-				</div>
-			</a>
-		</div>
+		</a>
 	{/each}
-	<p class="muted" style="text-align:center;margin:18px 0 0;font-size:12px">
-		Swipe a note — left to delete, right to pin
-	</p>
 {/if}
 
 <button class="fab" onclick={() => goto('/new')} aria-label="New note">+</button>
