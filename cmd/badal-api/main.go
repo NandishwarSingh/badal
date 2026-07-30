@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -24,6 +25,8 @@ import (
 	"github.com/NandishwarSingh/badal/internal/httpx"
 	"github.com/NandishwarSingh/badal/internal/notes"
 	"github.com/NandishwarSingh/badal/internal/objects"
+	"github.com/NandishwarSingh/badal/internal/passkey"
+	"github.com/NandishwarSingh/badal/internal/push"
 	"github.com/NandishwarSingh/badal/internal/store"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
@@ -69,6 +72,31 @@ func main() {
 	blobSvc := blobs.New(st.Pool, obj, feed)
 	noteSvc := notes.New(st.Pool, feed)
 	bootstrap := os.Getenv("BADAL_BOOTSTRAP_TOKEN")
+	enrolSecret := os.Getenv("BADAL_ENROL_SECRET")
+
+	// Passkeys need the exact origin the PWA is served from.
+	var pk *passkey.Service
+	if cfg.RPID != "" && cfg.Origin != "" {
+		pk, err = passkey.New(st.Pool, cfg.RPID, cfg.Origin)
+		if err != nil {
+			slog.Error("passkey init", "err", err)
+			os.Exit(1)
+		}
+		go func() {
+			t := time.NewTicker(time.Hour)
+			defer t.Stop()
+			for range t.C {
+				pk.GC(context.Background())
+			}
+		}()
+		slog.Info("passkeys enabled", "rpid", cfg.RPID, "origin", cfg.Origin)
+	}
+
+	pushSvc, err := push.New(ctx, st.Pool, cfg.PushSubject)
+	if err != nil {
+		slog.Error("push init", "err", err)
+		os.Exit(1)
+	}
 
 	// SurrealDB is optional. It holds only derived data, so if it is down or
 	// unconfigured the notes API keeps working and the projector catches up
@@ -134,7 +162,30 @@ func main() {
 		httpx.JSON(w, 201, map[string]any{"device": d, "token": plaintext})
 	})
 
-	authed := func(h http.HandlerFunc) http.Handler { return authSvc.Middleware(h) }
+	// Two credential types reach the same endpoints: bearer tokens for the CLI
+	// and worker, httpOnly session cookies for the browser. The browser never
+	// holds a long-lived token, so an XSS has nothing durable to steal.
+	authed := func(h http.HandlerFunc) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tok := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			if tok != "" {
+				if d, err := authSvc.Authenticate(r.Context(), tok); err == nil {
+					h(w, r.WithContext(auth.WithDevice(r.Context(), d)))
+					return
+				}
+			}
+			if pk != nil {
+				if c, err := r.Cookie(passkey.SessionCookie); err == nil {
+					if devID, err := pk.Authenticate(r.Context(), c.Value); err == nil {
+						h(w, r.WithContext(auth.WithDevice(r.Context(),
+							auth.Device{ID: devID, Name: "session", Platform: "web", Scopes: []string{"full"}})))
+						return
+					}
+				}
+			}
+			httpx.Err(w, http.StatusUnauthorized, "unauthorized", "")
+		})
+	}
 
 	mux.Handle("GET /v1/devices", authed(func(w http.ResponseWriter, r *http.Request) {
 		list, err := authSvc.List(r.Context())
@@ -307,6 +358,143 @@ func main() {
 		httpx.JSON(w, 200, map[string]any{"deleted": r.PathValue("path")})
 	}))
 
+	// ------------------------------------------------------------ passkeys
+	if pk != nil {
+		// Whether to show "create a passkey" or "sign in". Unauthenticated by
+		// necessity -- it leaks only whether any passkey exists.
+		mux.HandleFunc("GET /v1/auth/state", func(w http.ResponseWriter, r *http.Request) {
+			has, _ := pk.HasCredentials(r.Context())
+			signedIn := false
+			if c, err := r.Cookie(passkey.SessionCookie); err == nil {
+				_, e := pk.Authenticate(r.Context(), c.Value)
+				signedIn = e == nil
+			}
+			httpx.JSON(w, 200, map[string]any{"has_passkeys": has, "signed_in": signedIn})
+		})
+
+		// First passkey is claimed with the bootstrap-style enrolment secret or
+		// an existing session; after that, only an existing session can add one.
+		// Otherwise anyone reaching the URL could enrol themselves.
+		mux.HandleFunc("POST /v1/auth/register/begin", func(w http.ResponseWriter, r *http.Request) {
+			if !mayEnrol(r, pk, authSvc, enrolSecret) {
+				httpx.Err(w, 401, "unauthorized", "enrolment secret or an existing session is required")
+				return
+			}
+			opts, id, err := pk.BeginRegister(r.Context())
+			if err != nil {
+				httpx.Err(w, 500, "begin_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"ceremony": id, "options": opts})
+		})
+
+		mux.HandleFunc("POST /v1/auth/register/finish", func(w http.ResponseWriter, r *http.Request) {
+			if !mayEnrol(r, pk, authSvc, enrolSecret) {
+				httpx.Err(w, 401, "unauthorized", "")
+				return
+			}
+			id, err := uuid.Parse(r.URL.Query().Get("ceremony"))
+			if err != nil {
+				httpx.Err(w, 400, "bad_request", "missing ceremony")
+				return
+			}
+			if err := pk.FinishRegister(r.Context(), id, r.URL.Query().Get("label"), r); err != nil {
+				httpx.Err(w, 400, "register_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"registered": true})
+		})
+
+		mux.HandleFunc("POST /v1/auth/login/begin", func(w http.ResponseWriter, r *http.Request) {
+			opts, id, err := pk.BeginLogin(r.Context())
+			if err != nil {
+				httpx.Err(w, 400, "begin_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"ceremony": id, "options": opts})
+		})
+
+		mux.HandleFunc("POST /v1/auth/login/finish", func(w http.ResponseWriter, r *http.Request) {
+			id, err := uuid.Parse(r.URL.Query().Get("ceremony"))
+			if err != nil {
+				httpx.Err(w, 400, "bad_request", "missing ceremony")
+				return
+			}
+			tok, exp, err := pk.FinishLogin(r.Context(), id, r)
+			if err != nil {
+				httpx.Err(w, 401, "login_failed", err.Error())
+				return
+			}
+			passkey.SetCookie(w, tok, exp)
+			httpx.JSON(w, 200, map[string]any{"signed_in": true, "expires_at": exp})
+		})
+
+		mux.HandleFunc("POST /v1/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+			if c, err := r.Cookie(passkey.SessionCookie); err == nil {
+				_ = pk.Logout(r.Context(), c.Value)
+			}
+			passkey.ClearCookie(w)
+			httpx.JSON(w, 200, map[string]any{"signed_out": true})
+		})
+
+		mux.Handle("GET /v1/auth/credentials", authed(func(w http.ResponseWriter, r *http.Request) {
+			list, err := pk.ListCredentials(r.Context())
+			if err != nil {
+				httpx.Err(w, 500, "list_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"credentials": list})
+		}))
+
+		mux.Handle("DELETE /v1/auth/credentials/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+			if err := pk.DeleteCredential(r.Context(), r.PathValue("id")); err != nil {
+				httpx.Err(w, 400, "delete_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"deleted": true})
+		}))
+	}
+
+	// ---------------------------------------------------------------- push
+	mux.HandleFunc("GET /v1/push/key", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, 200, map[string]any{"public_key": pushSvc.PublicKey()})
+	})
+
+	mux.Handle("POST /v1/push/subscribe", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		var sub push.Subscription
+		if err := json.NewDecoder(r.Body).Decode(&sub); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		if err := pushSvc.Subscribe(r.Context(), sub, &d.ID, r.UserAgent()); err != nil {
+			httpx.Err(w, 400, "subscribe_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 201, map[string]any{"subscribed": true})
+	}))
+
+	mux.Handle("POST /v1/push/unsubscribe", authed(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Endpoint string `json:"endpoint"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = pushSvc.Unsubscribe(r.Context(), req.Endpoint)
+		httpx.JSON(w, 200, map[string]any{"unsubscribed": true})
+	}))
+
+	mux.Handle("POST /v1/push/test", authed(func(w http.ResponseWriter, r *http.Request) {
+		n, err := pushSvc.Send(r.Context(), push.Message{
+			Title: "badal", Body: "Push is working.", URL: "/",
+		})
+		if err != nil {
+			httpx.Err(w, 500, "send_failed", err.Error())
+			return
+		}
+		total, _ := pushSvc.Count(r.Context())
+		httpx.JSON(w, 200, map[string]any{"sent": n, "subscriptions": total})
+	}))
+
 	// --------------------------------------------------------------- notes
 	mux.Handle("GET /v1/notes", authed(func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -459,4 +647,25 @@ func main() {
 	sctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
+}
+
+// mayEnrol gates passkey registration. Without this any visitor could enrol
+// their own passkey and own the instance -- the classic "first user wins"
+// hole in single-tenant WebAuthn setups.
+func mayEnrol(r *http.Request, pk *passkey.Service, a *auth.Service, secret string) bool {
+	if c, err := r.Cookie(passkey.SessionCookie); err == nil {
+		if _, err := pk.Authenticate(r.Context(), c.Value); err == nil {
+			return true
+		}
+	}
+	tok := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	if tok != "" {
+		if _, err := a.Authenticate(r.Context(), tok); err == nil {
+			return true
+		}
+	}
+	if secret != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Badal-Enrol")), []byte(secret)) == 1 {
+		return true
+	}
+	return false
 }

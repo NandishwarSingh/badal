@@ -66,12 +66,13 @@
 		<p>Tap <strong>New</strong> to write your first one.</p>
 	</div>
 {:else}
-	{#each notes as n (n.slug)}
-		<a class="card" href="/note/{n.slug}">
+	{#each notes as n, i (n.slug)}
+		<a class="card" class:pending={n._dirty} href="/note/{n.slug}"
+			style="animation-delay:{Math.min(i * 35, 320)}ms">
 			<div class="row">
 				<h3>{n.title}</h3>
 				<span class="spacer"></span>
-				{#if n._dirty}<span class="pill warn">unsynced</span>{/if}
+				{#if n._dirty}<span class="pill warn">saving</span>{/if}
 			</div>
 			{#if preview(n.body)}<p>{preview(n.body)}</p>{/if}
 			<div class="row" style="margin-top:7px">

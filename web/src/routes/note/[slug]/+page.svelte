@@ -5,6 +5,7 @@
 	import { Notes, renderMarkdown, slugify } from '$lib/api.js';
 	import { cache } from '$lib/store.js';
 	import { queuePut, queueDelete, state as sync } from '$lib/sync.svelte.js';
+	import { toast } from '$lib/toast.svelte.js';
 
 	let slug = $derived(page.params.slug);
 	let note = $state(null);
@@ -73,6 +74,7 @@
 		});
 		dirty = false;
 		saving = false;
+		toast('Saved');
 		const fresh = await cache.get(slug);
 		if (fresh) note = fresh;
 	}
@@ -80,6 +82,7 @@
 	async function remove() {
 		if (!confirm('Delete this note?')) return;
 		await queueDelete(slug);
+		toast('Deleted');
 		goto('/');
 	}
 

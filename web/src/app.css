@@ -1,38 +1,52 @@
-/* badal — mobile first.
-   Everything below is sized for a phone held one-handed; the media query at
-   the bottom is the only place desktop is considered. */
+/* badal — pitch black + liquid glass. Mobile first.
+ *
+ * The look is built from three layers: a true-black base, translucent panels
+ * that blur what is behind them, and a 1px specular edge that catches light
+ * along the top. Nothing here uses a solid grey card -- depth comes from blur
+ * and edge highlights, which is what makes glass read as glass.
+ */
 
 :root {
-	--bg: #0b0d10;
-	--surface: #14171c;
-	--surface-2: #1b1f26;
-	--line: #262b33;
-	--text: #e8ecf1;
-	--muted: #8b95a3;
-	--accent: #60a5fa;
-	--accent-dim: #1e3a5f;
-	--warn: #fbbf24;
-	--danger: #f87171;
+	--black: #000000;
+	--glass-fill: linear-gradient(
+		145deg,
+		rgba(255, 255, 255, 0.075) 0%,
+		rgba(255, 255, 255, 0.032) 45%,
+		rgba(255, 255, 255, 0.014) 100%
+	);
+	--glass-fill-hi: linear-gradient(
+		145deg,
+		rgba(255, 255, 255, 0.13) 0%,
+		rgba(255, 255, 255, 0.055) 50%,
+		rgba(255, 255, 255, 0.022) 100%
+	);
+	--edge: rgba(255, 255, 255, 0.1);
+	--edge-hi: rgba(255, 255, 255, 0.22);
+	--blur: blur(28px) saturate(190%);
+
+	--text: #f2f4f7;
+	--muted: #7f8794;
+	--dim: #5a616c;
+
+	--accent: #5b9dff;
+	--accent-soft: rgba(91, 157, 255, 0.16);
+	--warn: #ffc453;
+	--danger: #ff6b6b;
 	--ok: #4ade80;
-	--radius: 14px;
-	--tabbar: 60px;
+
+	--r-sm: 12px;
+	--r: 18px;
+	--r-lg: 26px;
+
+	/* One spring for everything that moves, so the whole app feels like a
+	   single physical object rather than a pile of components. */
+	--spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+	--tabbar: 62px;
 	--safe-b: env(safe-area-inset-bottom, 0px);
 	--safe-t: env(safe-area-inset-top, 0px);
 	color-scheme: dark;
-}
-
-@media (prefers-color-scheme: light) {
-	:root {
-		--bg: #f7f8fa;
-		--surface: #ffffff;
-		--surface-2: #eef1f5;
-		--line: #dfe3e9;
-		--text: #10151b;
-		--muted: #616b7a;
-		--accent: #2563eb;
-		--accent-dim: #dbeafe;
-		color-scheme: light;
-	}
 }
 
 * {
@@ -44,19 +58,76 @@ html,
 body {
 	margin: 0;
 	padding: 0;
-	height: 100%;
+	min-height: 100%;
+	background: var(--black);
 	overscroll-behavior-y: none;
 }
 
 body {
-	background: var(--bg);
 	color: var(--text);
-	font: 16px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-	/* stop iOS zooming inputs on focus */
+	font:
+		16px/1.55 -apple-system,
+		BlinkMacSystemFont,
+		'SF Pro Text',
+		'Segoe UI',
+		Roboto,
+		sans-serif;
 	-webkit-text-size-adjust: 100%;
+	-webkit-font-smoothing: antialiased;
 }
 
-/* ------------------------------------------------------------- layout */
+/* Ambient colour behind the glass. Without something to refract, blurred
+   panels over pure black look like flat grey rectangles. */
+body::before {
+	content: '';
+	position: fixed;
+	inset: -25%;
+	z-index: -1;
+	pointer-events: none;
+	background:
+		radial-gradient(50% 40% at 18% 8%, rgba(70, 120, 255, 0.14), transparent 70%),
+		radial-gradient(45% 38% at 88% 22%, rgba(150, 80, 255, 0.1), transparent 70%),
+		radial-gradient(55% 45% at 50% 108%, rgba(0, 190, 190, 0.09), transparent 70%);
+	filter: blur(48px);
+	animation: drift 26s var(--ease) infinite alternate;
+}
+
+@keyframes drift {
+	0% {
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+	100% {
+		transform: translate3d(2%, -2.5%, 0) scale(1.07);
+	}
+}
+
+/* ------------------------------------------------------------- surfaces */
+
+.glass {
+	position: relative;
+	background: var(--glass-fill);
+	backdrop-filter: var(--blur);
+	-webkit-backdrop-filter: var(--blur);
+	border: 1px solid var(--edge);
+	border-radius: var(--r);
+	box-shadow:
+		0 10px 34px rgba(0, 0, 0, 0.62),
+		inset 0 1px 0 rgba(255, 255, 255, 0.07);
+	overflow: hidden;
+}
+
+/* The specular sheen along the top edge -- this is the detail that sells it. */
+.glass::after {
+	content: '';
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 42%;
+	pointer-events: none;
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent);
+	opacity: 0.85;
+}
+
+/* -------------------------------------------------------------- layout */
 
 .app {
 	min-height: 100dvh;
@@ -72,18 +143,19 @@ body {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	padding: 10px 14px;
-	background: color-mix(in srgb, var(--bg) 88%, transparent);
-	backdrop-filter: saturate(180%) blur(14px);
-	border-bottom: 1px solid var(--line);
-	min-height: 52px;
+	padding: 11px 15px;
+	min-height: 54px;
+	background: rgba(0, 0, 0, 0.55);
+	backdrop-filter: blur(22px) saturate(180%);
+	-webkit-backdrop-filter: blur(22px) saturate(180%);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .topbar h1 {
 	font-size: 19px;
-	font-weight: 650;
+	font-weight: 640;
 	margin: 0;
-	letter-spacing: -0.01em;
+	letter-spacing: -0.022em;
 	flex: 1;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -92,79 +164,163 @@ body {
 
 main {
 	flex: 1;
-	padding: 12px 14px calc(var(--tabbar) + var(--safe-b) + 24px);
-	max-width: 900px;
+	padding: 13px 15px calc(var(--tabbar) + var(--safe-b) + 28px);
+	max-width: 880px;
 	width: 100%;
 	margin: 0 auto;
 }
 
-/* -------------------------------------------------------- bottom tabs */
-/* Bottom, not top: this is where a thumb reaches on a phone. */
+/* ----------------------------------------------------------- tab bar */
 
 .tabbar {
 	position: fixed;
-	left: 0;
-	right: 0;
-	bottom: 0;
+	left: 10px;
+	right: 10px;
+	bottom: calc(var(--safe-b) + 9px);
 	z-index: 30;
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
-	background: color-mix(in srgb, var(--surface) 94%, transparent);
-	backdrop-filter: saturate(180%) blur(14px);
-	border-top: 1px solid var(--line);
-	padding-bottom: var(--safe-b);
+	border-radius: 22px;
+	background: var(--glass-fill);
+	backdrop-filter: var(--blur);
+	-webkit-backdrop-filter: var(--blur);
+	border: 1px solid var(--edge);
+	box-shadow:
+		0 12px 40px rgba(0, 0, 0, 0.72),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	overflow: hidden;
 }
 
 .tabbar a {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	gap: 3px;
 	height: var(--tabbar);
-	color: var(--muted);
+	color: var(--dim);
 	text-decoration: none;
-	font-size: 11px;
-	font-weight: 500;
+	font-size: 10.5px;
+	font-weight: 550;
+	letter-spacing: 0.01em;
+	transition:
+		color 0.3s var(--ease),
+		transform 0.35s var(--spring);
 }
 
 .tabbar a.active {
-	color: var(--accent);
+	color: var(--text);
 }
-.tabbar svg {
-	width: 22px;
-	height: 22px;
-	stroke: currentColor;
-	fill: none;
-	stroke-width: 1.9;
-	stroke-linecap: round;
-	stroke-linejoin: round;
+.tabbar a:active {
+	transform: scale(0.9);
 }
 
-/* -------------------------------------------------------------- cards */
+.tabbar a.active::before {
+	content: '';
+	position: absolute;
+	inset: 6px 10px;
+	border-radius: 15px;
+	background: rgba(255, 255, 255, 0.09);
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	animation: tabpop 0.4s var(--spring);
+}
+
+@keyframes tabpop {
+	from {
+		transform: scale(0.75);
+		opacity: 0;
+	}
+	to {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+.tabbar svg {
+	width: 21px;
+	height: 21px;
+	stroke: currentColor;
+	fill: none;
+	stroke-width: 1.85;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	position: relative;
+}
+
+/* --------------------------------------------------------------- cards */
 
 .card {
 	display: block;
-	background: var(--surface);
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	padding: 13px 15px;
-	margin-bottom: 9px;
+	position: relative;
+	padding: 14px 16px;
+	margin-bottom: 10px;
+	min-height: 58px;
 	text-decoration: none;
 	color: inherit;
-	/* comfortably above the 44px minimum touch target */
-	min-height: 56px;
+	background: var(--glass-fill);
+	backdrop-filter: var(--blur);
+	-webkit-backdrop-filter: var(--blur);
+	border: 1px solid var(--edge);
+	border-radius: var(--r);
+	box-shadow:
+		0 8px 26px rgba(0, 0, 0, 0.5),
+		inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	transition:
+		transform 0.32s var(--spring),
+		border-color 0.3s var(--ease),
+		background 0.3s var(--ease);
+	/* Entry animation for lists; stagger comes from an inline delay. */
+	animation: rise 0.44s var(--ease) both;
+}
+
+@keyframes rise {
+	from {
+		opacity: 0;
+		transform: translateY(11px) scale(0.985);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+.card::after {
+	content: '';
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 40%;
+	pointer-events: none;
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent);
 }
 
 .card:active {
-	background: var(--surface-2);
+	transform: scale(0.975);
+	background: var(--glass-fill-hi);
+	border-color: var(--edge-hi);
+}
+
+/* A write that has not reached the server yet. Shown, not hidden -- the whole
+   point of optimistic UI is that you can trust what you see. */
+.card.pending {
+	animation: rise 0.44s var(--ease) both, breathe 2.4s var(--ease) infinite;
+}
+
+@keyframes breathe {
+	0%,
+	100% {
+		border-color: var(--edge);
+	}
+	50% {
+		border-color: rgba(255, 196, 83, 0.34);
+	}
 }
 
 .card h3 {
 	margin: 0 0 3px;
 	font-size: 16px;
-	font-weight: 600;
-	letter-spacing: -0.01em;
+	font-weight: 610;
+	letter-spacing: -0.015em;
 }
 
 .card p {
@@ -190,11 +346,12 @@ main {
 
 .tag {
 	font-size: 11px;
-	padding: 2px 8px;
+	padding: 2.5px 9px;
 	border-radius: 999px;
-	background: var(--accent-dim);
+	background: var(--accent-soft);
 	color: var(--accent);
 	font-weight: 600;
+	border: 1px solid rgba(91, 157, 255, 0.2);
 }
 
 .muted {
@@ -203,19 +360,24 @@ main {
 }
 
 .pill {
-	font-size: 11px;
-	padding: 2px 8px;
+	font-size: 10.5px;
+	padding: 2.5px 9px;
 	border-radius: 999px;
-	border: 1px solid var(--line);
+	border: 1px solid var(--edge);
 	color: var(--muted);
+	background: rgba(255, 255, 255, 0.04);
+	font-weight: 550;
+	white-space: nowrap;
 }
 .pill.warn {
 	color: var(--warn);
-	border-color: var(--warn);
+	border-color: rgba(255, 196, 83, 0.34);
+	background: rgba(255, 196, 83, 0.1);
 }
 .pill.ok {
 	color: var(--ok);
-	border-color: var(--ok);
+	border-color: rgba(74, 222, 128, 0.32);
+	background: rgba(74, 222, 128, 0.1);
 }
 
 /* ------------------------------------------------------------ controls */
@@ -225,108 +387,174 @@ button,
 	font: inherit;
 	font-weight: 600;
 	font-size: 15px;
-	border-radius: 11px;
-	border: 1px solid var(--line);
-	background: var(--surface-2);
+	border-radius: 13px;
+	border: 1px solid var(--edge);
+	background: var(--glass-fill);
+	backdrop-filter: blur(14px) saturate(170%);
+	-webkit-backdrop-filter: blur(14px) saturate(170%);
 	color: var(--text);
-	padding: 11px 15px;
-	min-height: 44px;
+	padding: 12px 16px;
+	min-height: 46px;
 	cursor: pointer;
 	text-decoration: none;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 7px;
+	gap: 8px;
+	transition:
+		transform 0.3s var(--spring),
+		background 0.25s var(--ease),
+		border-color 0.25s var(--ease),
+		opacity 0.2s;
+}
+
+button:active,
+.btn:active {
+	transform: scale(0.955);
+	background: var(--glass-fill-hi);
 }
 
 button.primary,
 .btn.primary {
-	background: var(--accent);
-	border-color: var(--accent);
+	background: linear-gradient(145deg, rgba(91, 157, 255, 0.95), rgba(58, 120, 220, 0.95));
+	border-color: rgba(150, 195, 255, 0.42);
 	color: #fff;
+	box-shadow:
+		0 8px 24px rgba(50, 110, 220, 0.34),
+		inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
+
 button.ghost {
 	background: transparent;
+	border-color: transparent;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
 }
 button.danger {
 	color: var(--danger);
-	border-color: var(--danger);
-	background: transparent;
+	border-color: rgba(255, 107, 107, 0.34);
+	background: rgba(255, 107, 107, 0.08);
 }
 button:disabled {
-	opacity: 0.45;
+	opacity: 0.38;
+	pointer-events: none;
 }
 
 input,
 textarea {
 	font: inherit;
-	/* 16px minimum or iOS zooms the viewport on focus */
+	/* 16px minimum, or iOS zooms the viewport on focus */
 	font-size: 16px;
 	width: 100%;
-	background: var(--surface);
 	color: var(--text);
-	border: 1px solid var(--line);
-	border-radius: 11px;
-	padding: 12px 13px;
+	background: rgba(255, 255, 255, 0.045);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+	border: 1px solid var(--edge);
+	border-radius: 13px;
+	padding: 13px 14px;
 	outline: none;
+	transition:
+		border-color 0.25s var(--ease),
+		background 0.25s var(--ease),
+		box-shadow 0.25s var(--ease);
+}
+input::placeholder,
+textarea::placeholder {
+	color: var(--dim);
 }
 input:focus,
 textarea:focus {
-	border-color: var(--accent);
+	border-color: rgba(91, 157, 255, 0.5);
+	background: rgba(255, 255, 255, 0.065);
+	box-shadow: 0 0 0 4px rgba(91, 157, 255, 0.11);
 }
 
 textarea {
 	resize: none;
-	line-height: 1.6;
+	line-height: 1.62;
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 15px;
 }
 
 .fab {
 	position: fixed;
-	right: 16px;
-	bottom: calc(var(--tabbar) + var(--safe-b) + 16px);
+	right: 17px;
+	bottom: calc(var(--tabbar) + var(--safe-b) + 24px);
 	z-index: 25;
-	width: 56px;
-	height: 56px;
+	width: 58px;
+	height: 58px;
 	border-radius: 50%;
-	background: var(--accent);
-	color: #fff;
-	border: none;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
-	font-size: 26px;
 	padding: 0;
+	font-size: 27px;
+	font-weight: 300;
+	color: #fff;
+	background: linear-gradient(145deg, rgba(91, 157, 255, 0.96), rgba(52, 112, 214, 0.96));
+	border: 1px solid rgba(160, 200, 255, 0.42);
+	box-shadow:
+		0 12px 34px rgba(40, 100, 210, 0.44),
+		inset 0 1px 0 rgba(255, 255, 255, 0.3);
+	animation: fabin 0.5s var(--spring) both;
+}
+@keyframes fabin {
+	from {
+		transform: scale(0) rotate(-90deg);
+	}
+	to {
+		transform: none;
+	}
+}
+.fab:active {
+	transform: scale(0.88);
 }
 
-/* ------------------------------------------------------------- editor */
+/* -------------------------------------------------------------- editor */
 
 .editor-title {
 	border: none;
 	background: transparent;
-	font-size: 22px;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	font-size: 23px;
 	font-weight: 700;
-	padding: 6px 0;
-	letter-spacing: -0.02em;
+	padding: 7px 0;
+	letter-spacing: -0.028em;
 }
 .editor-title:focus {
 	border: none;
+	background: transparent;
+	box-shadow: none;
 }
 
 .editor-body {
 	border: none;
 	background: transparent;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
 	padding: 0;
-	min-height: 55dvh;
+	min-height: 54dvh;
 }
 .editor-body:focus {
 	border: none;
+	background: transparent;
+	box-shadow: none;
 }
 
 .rendered {
 	font-size: 16px;
+	animation: fade 0.35s var(--ease) both;
+}
+@keyframes fade {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 .rendered h1 {
 	font-size: 22px;
+	letter-spacing: -0.02em;
 }
 .rendered h2 {
 	font-size: 19px;
@@ -335,78 +563,156 @@ textarea {
 	font-size: 17px;
 }
 .rendered pre {
-	background: var(--surface-2);
-	padding: 11px;
-	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid var(--edge);
+	padding: 12px;
+	border-radius: var(--r-sm);
 	overflow-x: auto;
 }
 .rendered code {
-	background: var(--surface-2);
-	padding: 1px 5px;
-	border-radius: 5px;
+	background: rgba(255, 255, 255, 0.07);
+	padding: 1.5px 6px;
+	border-radius: 6px;
 	font-size: 14px;
 }
 .rendered a.wiki {
 	color: var(--accent);
 	text-decoration: none;
-	border-bottom: 1px dashed var(--accent);
+	border-bottom: 1px dashed rgba(91, 157, 255, 0.45);
 }
 .rendered ul {
-	padding-left: 20px;
+	padding-left: 21px;
 }
 
+/* -------------------------------------------------------------- banners */
+
 .banner {
-	border-radius: 11px;
-	padding: 10px 13px;
-	margin-bottom: 11px;
+	border-radius: var(--r-sm);
+	padding: 11px 14px;
+	margin-bottom: 12px;
 	font-size: 14px;
 	border: 1px solid;
+	backdrop-filter: blur(18px);
+	-webkit-backdrop-filter: blur(18px);
+	animation: rise 0.4s var(--ease) both;
 }
 .banner.warn {
 	color: var(--warn);
-	border-color: color-mix(in srgb, var(--warn) 45%, transparent);
-	background: color-mix(in srgb, var(--warn) 12%, transparent);
+	border-color: rgba(255, 196, 83, 0.32);
+	background: rgba(255, 196, 83, 0.09);
 }
 .banner.err {
 	color: var(--danger);
-	border-color: color-mix(in srgb, var(--danger) 45%, transparent);
-	background: color-mix(in srgb, var(--danger) 12%, transparent);
+	border-color: rgba(255, 107, 107, 0.32);
+	background: rgba(255, 107, 107, 0.09);
+}
+.banner.info {
+	color: var(--accent);
+	border-color: rgba(91, 157, 255, 0.3);
+	background: rgba(91, 157, 255, 0.09);
 }
 
 .empty {
 	text-align: center;
 	color: var(--muted);
-	padding: 56px 20px;
+	padding: 62px 22px;
+	animation: fade 0.5s var(--ease) both;
 }
 
-/* --------------------------------------------------------- desktop up */
+/* Toast for optimistic confirmations. */
+.toast {
+	position: fixed;
+	left: 50%;
+	bottom: calc(var(--tabbar) + var(--safe-b) + 90px);
+	transform: translateX(-50%);
+	z-index: 60;
+	padding: 10px 17px;
+	border-radius: 999px;
+	font-size: 13.5px;
+	font-weight: 560;
+	background: var(--glass-fill-hi);
+	backdrop-filter: var(--blur);
+	-webkit-backdrop-filter: var(--blur);
+	border: 1px solid var(--edge-hi);
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+	animation: toastin 0.4s var(--spring) both;
+	pointer-events: none;
+	white-space: nowrap;
+}
+@keyframes toastin {
+	from {
+		opacity: 0;
+		transform: translateX(-50%) translateY(14px) scale(0.9);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(-50%) translateY(0) scale(1);
+	}
+}
+
+.spinner {
+	width: 15px;
+	height: 15px;
+	border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.18);
+	border-top-color: var(--accent);
+	animation: spin 0.7s linear infinite;
+	display: inline-block;
+}
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* ---------------------------------------------------------- desktop up */
 
 @media (min-width: 820px) {
 	.tabbar {
 		position: sticky;
-		top: 0;
+		top: 12px;
+		left: auto;
+		right: auto;
 		bottom: auto;
+		margin: 0 auto 16px;
+		width: max-content;
 		grid-template-columns: repeat(4, max-content);
-		justify-content: center;
-		gap: 8px;
-		border-top: none;
-		border-bottom: 1px solid var(--line);
-		padding: 6px;
+		border-radius: 18px;
 	}
 	.tabbar a {
 		flex-direction: row;
-		height: 40px;
-		padding: 0 16px;
-		border-radius: 10px;
-		font-size: 14px;
+		height: 42px;
+		padding: 0 20px;
+		font-size: 13.5px;
+		gap: 8px;
 	}
-	.tabbar a.active {
-		background: var(--accent-dim);
+	.tabbar a.active::before {
+		inset: 4px 6px;
+		border-radius: 13px;
 	}
 	main {
-		padding-bottom: 40px;
+		padding-bottom: 44px;
 	}
 	.fab {
-		bottom: 26px;
+		bottom: 28px;
+	}
+	.card:hover {
+		background: var(--glass-fill-hi);
+		border-color: var(--edge-hi);
+		transform: translateY(-1px);
+	}
+}
+
+/* Honour the OS setting -- vestibular disorders are not an edge case. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+	body::before {
+		animation: none;
 	}
 }

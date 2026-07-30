@@ -33,6 +33,9 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
 	const res = await fetch(getBase() + path, {
 		method,
 		signal,
+		// Passkey sessions ride on an httpOnly cookie; device tokens use the
+		// header. Sending both lets one client work either way.
+		credentials: 'include',
 		headers: {
 			Authorization: 'Bearer ' + getToken(),
 			...(body ? { 'Content-Type': 'application/json' } : {})

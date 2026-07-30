@@ -26,6 +26,11 @@ type Config struct {
 	SurrealNS   string
 	SurrealDB   string
 
+	// WebAuthn relying-party id and the exact origin the PWA is served from.
+	RPID        string
+	Origin      string
+	PushSubject string
+
 	NtfyURL   string
 	NtfyToken string
 
@@ -51,6 +56,9 @@ func Load() (*Config, error) {
 		SurrealPass: os.Getenv("BADAL_SURREAL_PASS"),
 		SurrealNS:   env("BADAL_SURREAL_NS", "badal"),
 		SurrealDB:   env("BADAL_SURREAL_DB", "notes"),
+		RPID:        os.Getenv("BADAL_RPID"),
+		Origin:      os.Getenv("BADAL_ORIGIN"),
+		PushSubject: env("BADAL_PUSH_SUBJECT", "mailto:nandubhai222@gmail.com"),
 		NtfyURL:     os.Getenv("BADAL_NTFY_URL"),
 		NtfyToken:   os.Getenv("BADAL_NTFY_TOKEN"),
 		ChunkMin:    envInt("BADAL_CHUNK_MIN", 256*1024),

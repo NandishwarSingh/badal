@@ -3,125 +3,223 @@
 	import { getBase, getToken, setCreds, clearCreds, api } from '$lib/api.js';
 	import { cache, outbox, requestPersistence } from '$lib/store.js';
 	import { state as sync, run, startAutoSync } from '$lib/sync.svelte.js';
+	import {
+		authState, registerPasskey, loginWithPasskey, logout,
+		listCredentials, platformAuthenticatorAvailable
+	} from '$lib/auth.js';
+	import { pushState, subscribePush, unsubscribePush, sendTestPush, isInstalled } from '$lib/push.js';
+	import { toast } from '$lib/toast.svelte.js';
 
+	let auth = $state({ has_passkeys: false, signed_in: false });
+	let tokenSignedIn = $state(false);
+	let canPasskey = $state(false);
+	let installed = $state(false);
+	let creds = $state([]);
+	let push = $state({ supported: false, subscribed: false, permission: 'default' });
+	let counts = $state({ notes: 0, queued: 0 });
+	let persisted = $state(false);
+	let busy = $state('');
+	let err = $state('');
+
+	// fallback token sign-in
 	let base = $state('');
 	let token = $state('');
-	let signedIn = $state(false);
-	let err = $state('');
-	let busy = $state(false);
-	let device = $state(null);
-	let persisted = $state(false);
-	let counts = $state({ notes: 0, queued: 0 });
-	let installEvent = $state(null);
-	let standalone = $state(false);
+	let enrolSecret = $state('');
+
+	const signedIn = $derived(auth.signed_in || tokenSignedIn);
 
 	onMount(async () => {
 		base = getBase();
-		signedIn = !!getToken();
-		standalone =
-			window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+		tokenSignedIn = !!getToken();
+		installed = isInstalled();
+		canPasskey = await platformAuthenticatorAvailable();
 		if (navigator.storage?.persisted) persisted = await navigator.storage.persisted();
-		window.addEventListener('beforeinstallprompt', (e) => {
-			e.preventDefault();
-			installEvent = e;
-		});
-		if (signedIn) await refresh();
+		await refresh();
 	});
 
 	async function refresh() {
+		try { auth = await authState(); } catch {}
 		counts = { notes: (await cache.all()).length, queued: await outbox.count() };
-		try {
-			const d = await api('/v1/devices');
-			device = (d.devices || []).find((x) => !x.revoked_at) || null;
-		} catch { /* offline */ }
-	}
-
-	async function signIn() {
-		err = '';
-		busy = true;
-		try {
-			setCreds(base, token.trim());
-			await api('/health'); // cheap check that the origin is right
-			await api('/v1/notes'); // and that the token is accepted
-			signedIn = true;
-			token = '';
-			await requestPersistence();
-			startAutoSync();
-			await refresh();
-		} catch (e) {
-			clearCreds();
-			err = e.status === 401 ? 'That token was rejected.' : e.message || 'Could not connect.';
-		} finally {
-			busy = false;
+		if (signedIn) {
+			creds = await listCredentials().catch(() => []);
+			push = await pushState().catch(() => push);
 		}
 	}
 
-	async function signOut() {
-		if (!confirm('Sign out and clear local notes on this device?')) return;
-		clearCreds();
-		await cache.clear();
-		location.href = '/';
+	async function doLogin() {
+		err = ''; busy = 'login';
+		try {
+			await loginWithPasskey();
+			toast('Signed in');
+			await requestPersistence(); startAutoSync(); await refresh(); await run();
+		} catch (e) { err = e.message || 'Sign-in failed.'; }
+		finally { busy = ''; }
 	}
 
-	async function install() {
-		if (!installEvent) return;
-		installEvent.prompt();
-		installEvent = null;
+	async function doEnrol() {
+		err = ''; busy = 'enrol';
+		try {
+			await registerPasskey(navigator.userAgent.includes('iPhone') ? 'iPhone' : 'This device', enrolSecret.trim());
+			enrolSecret = '';
+			toast('Passkey created');
+			if (!auth.signed_in) await loginWithPasskey();
+			await requestPersistence(); startAutoSync(); await refresh(); await run();
+		} catch (e) { err = e.message || 'Could not create a passkey.'; }
+		finally { busy = ''; }
+	}
+
+	async function doLogout() {
+		await logout(); clearCreds(); await cache.clear(); location.href = '/';
+	}
+
+	async function tokenSignIn() {
+		err = ''; busy = 'token';
+		try {
+			setCreds(base, token.trim());
+			await api('/v1/notes');
+			tokenSignedIn = true; token = '';
+			toast('Signed in');
+			await requestPersistence(); startAutoSync(); await refresh();
+		} catch (e) {
+			clearCreds();
+			err = e.status === 401 ? 'That token was rejected.' : e.message || 'Could not connect.';
+		} finally { busy = ''; }
+	}
+
+	async function togglePush() {
+		err = ''; busy = 'push';
+		try {
+			if (push.subscribed) { await unsubscribePush(); toast('Notifications off'); }
+			else { await subscribePush(); toast('Notifications on'); }
+			push = await pushState();
+		} catch (e) { err = e.message; }
+		finally { busy = ''; }
+	}
+
+	async function testPush() {
+		busy = 'test';
+		try {
+			const r = await sendTestPush();
+			toast(r.sent ? `Sent to ${r.sent} device${r.sent > 1 ? 's' : ''}` : 'No devices subscribed');
+		} catch (e) { err = e.message; }
+		finally { busy = ''; }
 	}
 </script>
 
-<div class="topbar"><h1>Settings</h1></div>
+<div class="topbar"><h1>You</h1></div>
 
 {#if !signedIn}
-	<p class="muted" style="margin:0 2px 14px">
-		Register a device on your Mac with <code>badal</code>, then paste its token here.
-	</p>
-	<label class="muted" for="b">Server</label>
-	<input id="b" bind:value={base} placeholder="https://badal.nandishwarsingh.com" style="margin:6px 0 12px" />
-	<label class="muted" for="t">Device token</label>
-	<input id="t" bind:value={token} placeholder="bdl_…" type="password" style="margin:6px 0 14px" />
-	{#if err}<div class="banner err">{err}</div>{/if}
-	<button class="primary" onclick={signIn} disabled={busy || !token.trim()} style="width:100%">
-		{busy ? 'Checking…' : 'Sign in'}
-	</button>
-{:else}
-	{#if !standalone}
-		<div class="card">
-			<h3>Install badal</h3>
-			<p style="-webkit-line-clamp:4;line-clamp:4">
-				Add to your home screen for offline access and push notifications. On iPhone: Share → Add
-				to Home Screen. Notifications only work once installed.
-			</p>
-			{#if installEvent}
-				<button class="primary" onclick={install} style="margin-top:10px">Install</button>
+	<div class="card" style="animation-delay:0ms">
+		<h3>Sign in</h3>
+		<p style="-webkit-line-clamp:4;line-clamp:4">
+			{#if auth.has_passkeys}
+				Use Face ID, Touch ID, or your device PIN.
+			{:else}
+				No passkey exists yet. Create the first one with your enrolment secret.
 			{/if}
+		</p>
+
+		{#if canPasskey && auth.has_passkeys}
+			<button class="primary" style="width:100%;margin-top:12px" onclick={doLogin} disabled={busy === 'login'}>
+				{#if busy === 'login'}<span class="spinner"></span>{/if} Sign in with passkey
+			</button>
+		{/if}
+
+		{#if canPasskey && !auth.has_passkeys}
+			<input bind:value={enrolSecret} placeholder="Enrolment secret" type="password" style="margin-top:12px" />
+			<button class="primary" style="width:100%;margin-top:9px" onclick={doEnrol}
+				disabled={busy === 'enrol' || !enrolSecret.trim()}>
+				{#if busy === 'enrol'}<span class="spinner"></span>{/if} Create passkey
+			</button>
+		{/if}
+
+		{#if !canPasskey}
+			<div class="banner warn" style="margin-top:12px">
+				This browser has no platform authenticator. Use a device token below.
+			</div>
+		{/if}
+	</div>
+
+	<details style="margin-top:6px">
+		<summary class="muted" style="padding:10px 4px;cursor:pointer">Sign in with a device token instead</summary>
+		<div style="padding:4px 2px 0">
+			<input bind:value={base} placeholder="https://badal.nandishwarsingh.com" style="margin-bottom:9px" />
+			<input bind:value={token} placeholder="bdl_…" type="password" style="margin-bottom:11px" />
+			<button style="width:100%" onclick={tokenSignIn} disabled={busy === 'token' || !token.trim()}>Sign in</button>
+		</div>
+	</details>
+
+	{#if err}<div class="banner err" style="margin-top:12px">{err}</div>{/if}
+{:else}
+	{#if !installed}
+		<div class="card" style="animation-delay:0ms">
+			<h3>Add to Home Screen</h3>
+			<p style="-webkit-line-clamp:5;line-clamp:5">
+				Share → Add to Home Screen. On iPhone this is required before notifications will work at
+				all, and it stops Safari evicting your offline notes.
+			</p>
 		</div>
 	{/if}
 
-	<div class="card">
-		<h3>This device</h3>
-		<div class="row" style="margin-top:6px">
-			<span class="muted">{device ? device.name : 'unknown'}</span>
+	<div class="card" style="animation-delay:40ms">
+		<div class="row">
+			<h3>Notifications</h3>
+			<span class="spacer"></span>
+			<span class="pill {push.subscribed ? 'ok' : ''}">{push.subscribed ? 'on' : 'off'}</span>
+		</div>
+		<p style="-webkit-line-clamp:3;line-clamp:3">
+			Web Push — no Apple Developer account needed.
+		</p>
+		<div class="row" style="margin-top:11px">
+			<button onclick={togglePush} disabled={busy === 'push' || !push.supported}>
+				{#if busy === 'push'}<span class="spinner"></span>{/if}
+				{push.subscribed ? 'Turn off' : 'Turn on'}
+			</button>
+			{#if push.subscribed}
+				<button class="ghost" onclick={testPush} disabled={busy === 'test'}>Send test</button>
+			{/if}
+		</div>
+	</div>
+
+	<div class="card" style="animation-delay:80ms">
+		<div class="row">
+			<h3>Passkeys</h3>
+			<span class="spacer"></span>
+			<span class="pill">{creds.length}</span>
+		</div>
+		{#each creds as c}
+			<div class="row" style="margin-top:8px">
+				<span class="muted">{c.label}</span>
+				<span class="spacer"></span>
+				{#if c.synced}<span class="pill ok">synced</span>{/if}
+			</div>
+		{/each}
+		{#if canPasskey}
+			<button style="width:100%;margin-top:11px" onclick={doEnrol} disabled={busy === 'enrol'}>
+				{#if busy === 'enrol'}<span class="spinner"></span>{/if} Add a passkey for this device
+			</button>
+		{/if}
+	</div>
+
+	<div class="card" style="animation-delay:120ms">
+		<h3>Storage</h3>
+		<div class="row" style="margin-top:7px">
+			<span class="muted">{counts.notes} notes cached · {counts.queued} queued</span>
 			<span class="spacer"></span>
 			<span class="pill {sync.online ? 'ok' : 'warn'}">{sync.online ? 'online' : 'offline'}</span>
 		</div>
 		<div class="row" style="margin-top:8px">
-			<span class="muted">{counts.notes} notes cached · {counts.queued} queued</span>
-		</div>
-		<div class="row" style="margin-top:8px">
 			<span class="pill {persisted ? 'ok' : 'warn'}">
-				{persisted ? 'storage persisted' : 'storage may be evicted'}
+				{persisted ? 'storage persisted' : 'eviction possible'}
 			</span>
 		</div>
 	</div>
 
+	{#if err}<div class="banner err">{err}</div>{/if}
+
 	<div class="row" style="margin-top:14px">
 		<button onclick={() => run().then(refresh)}>Sync now</button>
 		<span class="spacer"></span>
-		<button class="danger" onclick={signOut}>Sign out</button>
+		<button class="danger" onclick={doLogout}>Sign out</button>
 	</div>
-
-	<p class="muted" style="margin-top:18px;font-size:12px">
-		Server: {base}
-	</p>
 {/if}

@@ -137,3 +137,9 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, d)))
 	})
 }
+
+// WithDevice injects a device into the context. Used by the API when the
+// caller authenticated via a passkey session rather than a bearer token.
+func WithDevice(ctx context.Context, d Device) context.Context {
+	return context.WithValue(ctx, ctxKey{}, d)
+}
