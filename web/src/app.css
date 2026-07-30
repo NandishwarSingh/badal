@@ -112,10 +112,11 @@ body {
 	gap: 10px;
 	padding: 11px 15px;
 	min-height: 54px;
-	/* Opaque on purpose. A translucent sticky bar forces the browser to
-	   repaint everything behind it on every scroll frame. */
-	background: #08090b;
-	border-bottom: 1px solid var(--edge);
+	/* Pure black and borderless, so the bar disappears into the page and
+	   content simply passes behind it as you scroll. Still opaque -- a
+	   translucent sticky bar forces a repaint of everything behind it on
+	   every scroll frame. */
+	background: var(--bg);
 }
 
 .topbar h1 {
