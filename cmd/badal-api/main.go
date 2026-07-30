@@ -24,6 +24,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/calendar"
 	"github.com/NandishwarSingh/badal/internal/chunks"
 	"github.com/NandishwarSingh/badal/internal/config"
+	"github.com/NandishwarSingh/badal/internal/embed"
 	"github.com/NandishwarSingh/badal/internal/extract"
 	"github.com/NandishwarSingh/badal/internal/httpx"
 	"github.com/NandishwarSingh/badal/internal/jobs"
@@ -130,6 +131,7 @@ func main() {
 
 	calSvc := calendar.New(st.Pool)
 	visSvc := vision.New(os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_VISION_MODEL"))
+	embSvc := embed.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_EMBED_MODEL"))
 	jobSvc := jobs.New(st.Pool)
 	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
@@ -723,6 +725,67 @@ func main() {
 		}))
 	}
 
+	// ------------------------------------------------------------ retrieval
+	mux.Handle("GET /v1/embeddings/stats", authed(func(w http.ResponseWriter, r *http.Request) {
+		st, err := embSvc.Stats(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "stats_failed", err.Error())
+			return
+		}
+		pend, _ := embSvc.Pending(r.Context(), 200)
+		st["pending"] = len(pend)
+		httpx.JSON(w, 200, st)
+	}))
+
+	mux.Handle("POST /v1/embeddings/backfill", authed(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		res, err := embSvc.Backfill(r.Context(), limit)
+		if err != nil {
+			httpx.Err(w, 500, "backfill_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, res)
+	}))
+
+	// Unified search. mode=keyword keeps the Phase 2 behaviour; mode=semantic
+	// is vector nearest-neighbour across notes, mail and events.
+	mux.Handle("GET /v1/search/all", authed(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		mode := r.URL.Query().Get("mode")
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		var types []string
+		if tp := r.URL.Query().Get("types"); tp != "" {
+			types = strings.Split(tp, ",")
+		}
+		if mode == "semantic" {
+			if !embSvc.Enabled() {
+				httpx.Err(w, http.StatusServiceUnavailable, "no_embeddings", "embedding key not configured")
+				return
+			}
+			hits, err := embSvc.Semantic(r.Context(), q, limit, types)
+			if err != nil {
+				httpx.Err(w, 500, "search_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"hits": hits, "count": len(hits), "mode": "semantic"})
+			return
+		}
+		// Keyword falls through to the existing note full-text search.
+		nh, err := noteSvc.Search(r.Context(), q, limit)
+		if err != nil {
+			httpx.Err(w, 500, "search_failed", err.Error())
+			return
+		}
+		out := make([]map[string]any, 0, len(nh))
+		for _, h := range nh {
+			out = append(out, map[string]any{
+				"source_type": "note", "source_id": h.Note.ID, "title": h.Note.Title,
+				"snippet": h.Snippet, "score": h.Rank, "slug": h.Note.Slug,
+			})
+		}
+		httpx.JSON(w, 200, map[string]any{"hits": out, "count": len(out), "mode": "keyword"})
+	}))
+
 	// ---------------------------------------------------------------- jobs
 	mux.Handle("POST /v1/jobs/claim", authed(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -925,6 +988,15 @@ func main() {
 				}
 				_ = mailSvc.MarkExtracted(r.Context(), m.ID, extract.Version, errStr)
 				results = append(results, res)
+			}
+			// Index what was just ingested, so search covers new mail without
+			// waiting for a manual backfill.
+			if embSvc.Enabled() {
+				if bf, err := embSvc.Backfill(r.Context(), 60); err != nil {
+					slog.Warn("embed after extract", "err", err)
+				} else if bf.Items > 0 {
+					slog.Info("embedded", "items", bf.Items, "chunks", bf.Chunks)
+				}
 			}
 			kept := 0
 			for _, r := range results {

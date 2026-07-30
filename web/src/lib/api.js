@@ -94,6 +94,13 @@ export const Mail = {
 	extract: (limit = 10) => api(`/v1/mail/extract?limit=${limit}`, { method: 'POST' })
 };
 
+export const Search = {
+	all: (q, mode, limit = 25) =>
+		api(`/v1/search/all?q=${encodeURIComponent(q)}&mode=${mode}&limit=${limit}`),
+	embedStats: () => api('/v1/embeddings/stats'),
+	backfill: (limit = 25) => api(`/v1/embeddings/backfill?limit=${limit}`, { method: 'POST' })
+};
+
 export const Jobs = {
 	stats: () => api('/v1/jobs/stats')
 };
