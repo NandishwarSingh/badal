@@ -68,3 +68,11 @@ func Recover(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// Raw writes an already-encoded JSON document unchanged. Used for SurrealDB
+// graph results, which have no useful Go shape to round-trip through.
+func Raw(w http.ResponseWriter, code int, body []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_, _ = w.Write(body)
+}

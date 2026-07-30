@@ -18,6 +18,14 @@ type Config struct {
 	S3Secret   string
 	S3UseSSL   bool
 
+	// SurrealDB holds the derived note graph. Optional: if unset the API runs
+	// without projection, which keeps notes usable when Surreal is down.
+	SurrealURL  string
+	SurrealUser string
+	SurrealPass string
+	SurrealNS   string
+	SurrealDB   string
+
 	NtfyURL   string
 	NtfyToken string
 
@@ -38,6 +46,11 @@ func Load() (*Config, error) {
 		S3KeyID:     os.Getenv("BADAL_S3_KEY_ID"),
 		S3Secret:    os.Getenv("BADAL_S3_SECRET"),
 		S3UseSSL:    env("BADAL_S3_SSL", "false") == "true",
+		SurrealURL:  os.Getenv("BADAL_SURREAL_URL"),
+		SurrealUser: env("BADAL_SURREAL_USER", "root"),
+		SurrealPass: os.Getenv("BADAL_SURREAL_PASS"),
+		SurrealNS:   env("BADAL_SURREAL_NS", "badal"),
+		SurrealDB:   env("BADAL_SURREAL_DB", "notes"),
 		NtfyURL:     os.Getenv("BADAL_NTFY_URL"),
 		NtfyToken:   os.Getenv("BADAL_NTFY_TOKEN"),
 		ChunkMin:    envInt("BADAL_CHUNK_MIN", 256*1024),

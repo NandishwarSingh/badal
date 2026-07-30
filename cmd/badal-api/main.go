@@ -22,8 +22,10 @@ import (
 	"github.com/NandishwarSingh/badal/internal/chunks"
 	"github.com/NandishwarSingh/badal/internal/config"
 	"github.com/NandishwarSingh/badal/internal/httpx"
+	"github.com/NandishwarSingh/badal/internal/notes"
 	"github.com/NandishwarSingh/badal/internal/objects"
 	"github.com/NandishwarSingh/badal/internal/store"
+	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
 )
 
@@ -65,7 +67,25 @@ func main() {
 	feed := syncfeed.New(st.Pool, hostname)
 	authSvc := auth.New(st.Pool)
 	blobSvc := blobs.New(st.Pool, obj, feed)
+	noteSvc := notes.New(st.Pool, feed)
 	bootstrap := os.Getenv("BADAL_BOOTSTRAP_TOKEN")
+
+	// SurrealDB is optional. It holds only derived data, so if it is down or
+	// unconfigured the notes API keeps working and the projector catches up
+	// later from its stored cursor.
+	var projector *surreal.Projector
+	if cfg.SurrealURL != "" {
+		sc := surreal.NewClient(cfg.SurrealURL, cfg.SurrealUser, cfg.SurrealPass, cfg.SurrealNS, cfg.SurrealDB)
+		if err := sc.Health(ctx); err != nil {
+			slog.Warn("surrealdb unreachable; graph projection disabled", "err", err)
+		} else if err := sc.EnsureSchema(ctx); err != nil {
+			slog.Warn("surrealdb schema failed; graph projection disabled", "err", err)
+		} else {
+			projector = surreal.NewProjector(st.Pool, sc, noteSvc)
+			go projector.Run(ctx, 5*time.Second)
+			slog.Info("surrealdb projector started", "ns", cfg.SurrealNS, "db", cfg.SurrealDB)
+		}
+	}
 
 	mux := http.NewServeMux()
 
@@ -285,6 +305,118 @@ func main() {
 			return
 		}
 		httpx.JSON(w, 200, map[string]any{"deleted": r.PathValue("path")})
+	}))
+
+	// --------------------------------------------------------------- notes
+	mux.Handle("GET /v1/notes", authed(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		list, err := noteSvc.List(r.Context(), notes.ListOpts{Tag: r.URL.Query().Get("tag"), Limit: limit})
+		if err != nil {
+			httpx.Err(w, 500, "list_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"notes": list, "count": len(list)})
+	}))
+
+	// PUT is the single write path: it creates when absent and updates when
+	// present, so an offline client replaying its outbox needs no branching.
+	mux.Handle("PUT /v1/notes/{slug}", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		var req struct {
+			Title   string   `json:"title"`
+			Body    string   `json:"body"`
+			Tags    []string `json:"tags"`
+			Version *int     `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		n, err := noteSvc.Put(r.Context(), d.ID, notes.PutInput{
+			Slug: r.PathValue("slug"), Title: req.Title, Body: req.Body,
+			Tags: req.Tags, Version: req.Version,
+		})
+		if errors.Is(err, notes.ErrConflict) {
+			// Nothing was lost: the incoming edit became a conflict copy and
+			// the client is told where to find it.
+			httpx.JSON(w, http.StatusConflict, map[string]any{
+				"error": "version_conflict", "conflict_copy": n,
+				"detail": "your edit was saved as a conflict copy; the note had changed since you loaded it",
+			})
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 400, "put_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, n)
+	}))
+
+	mux.Handle("GET /v1/notes/{slug}", authed(func(w http.ResponseWriter, r *http.Request) {
+		n, err := noteSvc.Get(r.Context(), r.PathValue("slug"))
+		if errors.Is(err, notes.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", r.PathValue("slug"))
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "get_failed", err.Error())
+			return
+		}
+		back, _ := noteSvc.Backlinks(r.Context(), n.Slug)
+		out, _ := noteSvc.Outlinks(r.Context(), n.ID)
+		httpx.JSON(w, 200, map[string]any{"note": n, "backlinks": back, "outlinks": out})
+	}))
+
+	mux.Handle("DELETE /v1/notes/{slug}", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		err := noteSvc.Delete(r.Context(), d.ID, r.PathValue("slug"))
+		if errors.Is(err, notes.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "delete_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"deleted": r.PathValue("slug")})
+	}))
+
+	mux.Handle("GET /v1/search", authed(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		hits, err := noteSvc.Search(r.Context(), r.URL.Query().Get("q"), limit)
+		if err != nil {
+			httpx.Err(w, 500, "search_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"hits": hits, "count": len(hits)})
+	}))
+
+	mux.Handle("GET /v1/conflicts", authed(func(w http.ResponseWriter, r *http.Request) {
+		list, err := noteSvc.Conflicts(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "conflicts_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"conflicts": list, "count": len(list)})
+	}))
+
+	mux.Handle("GET /v1/notes/{slug}/related", authed(func(w http.ResponseWriter, r *http.Request) {
+		if projector == nil {
+			httpx.Err(w, http.StatusServiceUnavailable, "graph_unavailable", "surrealdb not configured")
+			return
+		}
+		n, err := noteSvc.Get(r.Context(), r.PathValue("slug"))
+		if err != nil {
+			httpx.Err(w, 404, "not_found", r.PathValue("slug"))
+			return
+		}
+		depth, _ := strconv.Atoi(r.URL.Query().Get("depth"))
+		res, err := projector.Related(r.Context(), n.ID, depth)
+		if err != nil {
+			httpx.Err(w, 502, "graph_failed", err.Error())
+			return
+		}
+		httpx.Raw(w, 200, res)
 	}))
 
 	// --------------------------------------------------------------- sync
