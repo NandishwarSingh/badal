@@ -9,6 +9,7 @@ package mail
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -502,4 +503,31 @@ func snippet(s string) string {
 		return s[:220]
 	}
 	return s
+}
+
+// Message returns one message including its body and attachment metadata.
+func (s *Service) Message(ctx context.Context, id uuid.UUID) (map[string]any, error) {
+	var m Message
+	var atts []byte
+	var rawSize int
+	err := s.pool.QueryRow(ctx,
+		`SELECT id, message_id, subject, from_name, from_addr, received_at, snippet,
+		        body_text, (extracted_at IS NOT NULL), attachments, raw_size
+		   FROM messages WHERE id=$1`, id,
+	).Scan(&m.ID, &m.MessageID, &m.Subject, &m.FromName, &m.FromAddr, &m.ReceivedAt,
+		&m.Snippet, &m.BodyText, &m.Extracted, &atts, &rawSize)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("message not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var parsedAtts any
+	_ = json.Unmarshal(atts, &parsedAtts)
+	return map[string]any{
+		"id": m.ID, "message_id": m.MessageID, "subject": m.Subject,
+		"from_name": m.FromName, "from_addr": m.FromAddr,
+		"received_at": m.ReceivedAt, "body_text": m.BodyText,
+		"extracted": m.Extracted, "attachments": parsedAtts, "raw_size": rawSize,
+	}, nil
 }

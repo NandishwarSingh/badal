@@ -9,6 +9,7 @@
 	} from '$lib/auth.js';
 	import { pushState, subscribePush, unsubscribePush, sendTestPush, isInstalled } from '$lib/push.js';
 	import { toast } from '$lib/toast.svelte.js';
+	import { Settings, Mail } from '$lib/api.js';
 
 	let auth = $state({ has_passkeys: false, signed_in: false });
 	let tokenSignedIn = $state(false);
@@ -26,6 +27,8 @@
 	let token = $state('');
 	let enrolSecret = $state('');
 	let diag = $state(null);
+	let cfg = $state(null);
+	let mailAccts = $state([]);
 
 	const signedIn = $derived(auth.signed_in || tokenSignedIn);
 
@@ -44,6 +47,8 @@
 		if (signedIn) {
 			creds = await listCredentials().catch(() => []);
 			push = await pushState().catch(() => push);
+			cfg = await Settings.get().catch(() => null);
+			mailAccts = await Mail.accounts().then((r) => r.accounts || []).catch(() => []);
 		}
 	}
 
@@ -99,6 +104,18 @@
 				(e.status === 401 ? ' — token not accepted. Check for a missing character when pasting.' :
 				 e.status ? ` — ${e.message}` : ' — is the server reachable?');
 		} finally { busy = ''; }
+	}
+
+	async function setCfg(key, value) {
+		const prev = cfg?.[key];
+		cfg = { ...cfg, [key]: value }; // optimistic
+		try {
+			cfg = await Settings.set({ [key]: value });
+			toast('Saved');
+		} catch (e) {
+			cfg = { ...cfg, [key]: prev };
+			err = e.message;
+		}
 	}
 
 	async function togglePush() {

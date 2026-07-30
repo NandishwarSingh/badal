@@ -230,23 +230,34 @@ func (s *Service) upsert(ctx context.Context, msgID uuid.UUID, e Event,
 	// ON CONFLICT below cannot see those. Match on title and start time, and
 	// leave the existing row's state alone so a decision the user already made
 	// is never silently reopened.
+	// Titles vary between announcements of the same thing -- "UMANG 2026" and
+	// "UMANG 2026 - a spectacular cultural celebration" are one event. Treat a
+	// prefix match at the same time as the same event, which catches the
+	// common "short name" vs "full blurb" pair without merging genuinely
+	// different events that happen to share an hour.
+	title := strings.TrimSpace(e.Title)
 	var dupID uuid.UUID
 	err := s.pool.QueryRow(ctx,
 		`SELECT id FROM events
 		  WHERE deleted_at IS NULL
-		    AND lower(title) = lower($1)
 		    AND abs(extract(epoch from (starts_at - $2))) < 1800
-		  LIMIT 1`, strings.TrimSpace(e.Title), start).Scan(&dupID)
+		    AND (lower(title) = lower($1)
+		      OR lower(title) LIKE lower($1) || '%'
+		      OR lower($1) LIKE lower(title) || '%')
+		  ORDER BY length(title) LIMIT 1`, title, start).Scan(&dupID)
 	if err == nil {
 		// Keep whichever extraction was more confident, but never downgrade
 		// evidence we already have.
+		// Keep the shorter title: "UMANG 2026" is a better calendar entry than
+		// the full marketing sentence.
 		_, uerr := s.pool.Exec(ctx,
 			`UPDATE events
-			    SET confidence = greatest(confidence, $2),
+			    SET title      = CASE WHEN length($5) < length(title) THEN $5 ELSE title END,
+			        confidence = greatest(confidence, $2),
 			        location   = coalesce(nullif($3,''), location),
 			        ends_at    = coalesce(ends_at, $4),
 			        updated_at = now()
-			  WHERE id = $1`, dupID, e.Confidence, e.Location, end)
+			  WHERE id = $1`, dupID, e.Confidence, e.Location, end, title)
 		return uerr
 	}
 

@@ -138,6 +138,42 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Daily digest. Local time, because a UTC "today" would report yesterday
+	// evening's events at 06:00 IST.
+	tz, tzErr := time.LoadLocation(env("BADAL_TZ", "Asia/Kolkata"))
+	if tzErr != nil {
+		tz = time.UTC
+	}
+	go func() {
+		for {
+			now := time.Now().In(tz)
+			hour := setSvc.Int(ctx, "digest.hour", 7)
+			next := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, tz)
+			if !next.After(now) {
+				next = next.AddDate(0, 0, 1)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Until(next)):
+			}
+			if !setSvc.Bool(ctx, "digest.enabled", true) {
+				continue
+			}
+			d, err := calSvc.BuildDigest(ctx, tz)
+			if err != nil || d.Empty {
+				continue
+			}
+			if n, err := pushSvc.Send(ctx, push.Message{
+				Title: d.Title, Body: d.Body, URL: "/calendar", Tag: "digest",
+			}); err != nil {
+				slog.Warn("digest push", "err", err)
+			} else {
+				slog.Info("digest sent", "devices", n, "today", d.Today, "proposed", d.Proposed)
+			}
+		}
+	}()
+
 	// SurrealDB is optional. It holds only derived data, so if it is down or
 	// unconfigured the notes API keeps working and the projector catches up
 	// later from its stored cursor.
@@ -633,9 +669,41 @@ func main() {
 			httpx.JSON(w, 200, map[string]any{"deleted": id})
 		}))
 
+		// Preview the digest without waiting for the scheduled hour.
+		mux.Handle("GET /v1/digest", authed(func(w http.ResponseWriter, r *http.Request) {
+			d, err := calSvc.BuildDigest(r.Context(), tz)
+			if err != nil {
+				httpx.Err(w, 500, "digest_failed", err.Error())
+				return
+			}
+			if r.URL.Query().Get("send") == "1" && !d.Empty {
+				n, _ := pushSvc.Send(r.Context(), push.Message{
+					Title: d.Title, Body: d.Body, URL: "/calendar", Tag: "digest"})
+				httpx.JSON(w, 200, map[string]any{"digest": d, "sent": n})
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"digest": d})
+		}))
+
 		mux.Handle("POST /v1/mail/sync", authed(func(w http.ResponseWriter, r *http.Request) {
 			res := mailSvc.SyncAll(r.Context(), setSvc.Int(r.Context(), "mail.backfill_days", 7))
 			httpx.JSON(w, 200, map[string]any{"results": res})
+		}))
+
+		// Single message with its body, so the event sheet can show the source
+		// without the list endpoint having to carry every body.
+		mux.Handle("GET /v1/mail/messages/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+			id, err := uuid.Parse(r.PathValue("id"))
+			if err != nil {
+				httpx.Err(w, 400, "bad_request", "invalid id")
+				return
+			}
+			m, err := mailSvc.Message(r.Context(), id)
+			if err != nil {
+				httpx.Err(w, 404, "not_found", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, m)
 		}))
 
 		mux.Handle("GET /v1/mail/messages", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -762,9 +830,15 @@ func main() {
 
 			results := []extract.Result{}
 			for _, m := range pending {
+				body := m.BodyText
+				// PDF circulars often carry the only copy of the date. Failure
+				// here is not fatal -- the message body is still extracted.
+				if txt, err := mailSvc.AttachmentText(r.Context(), m.ID, 6000); err == nil && txt != "" {
+					body += "\n\n[ATTACHMENTS]\n" + txt
+				}
 				res, err := exSvc.Extract(r.Context(), extract.Message{
 					ID: m.ID, Subject: m.Subject, FromName: m.FromName,
-					FromAddr: m.FromAddr, ReceivedAt: m.ReceivedAt, Body: m.BodyText,
+					FromAddr: m.FromAddr, ReceivedAt: m.ReceivedAt, Body: body,
 				}, auto, minConf)
 				errStr := ""
 				if err != nil {

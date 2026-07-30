@@ -899,6 +899,9 @@ textarea {
 }
 
 .ev {
+	width: 100%;
+	text-align: left;
+	min-height: 0;
 	display: flex;
 	gap: 12px;
 	padding: 12px 14px;
@@ -939,4 +942,209 @@ textarea {
 	color: var(--muted);
 	font-style: italic;
 	overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------- event sheet */
+/*
+ * Bottom sheet, not a centred modal: on a phone the bottom is where a thumb
+ * reaches, and sliding up from the edge reads as "more detail about the thing
+ * you tapped" rather than "a new screen".
+ */
+
+.sheet-scrim {
+	position: fixed;
+	inset: 0;
+	z-index: 70;
+	background: rgba(0, 0, 0, 0.66);
+	border: none;
+	animation: fadein 0.16s var(--ease) both;
+}
+@keyframes fadein {
+	from {
+		opacity: 0;
+	}
+}
+
+.sheet {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 71;
+	max-height: 88dvh;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	padding: 8px 17px calc(env(safe-area-inset-bottom, 0px) + 20px);
+	border-radius: 22px 22px 0 0;
+	background-color: #101216;
+	background-image: var(--sheen);
+	border-top: 1px solid var(--edge-hi);
+	box-shadow: var(--rim), 0 -8px 30px rgba(0, 0, 0, 0.7);
+	/* transform only -- the compositor handles it without repainting */
+	animation: sheetup 0.24s var(--ease) both;
+}
+@keyframes sheetup {
+	from {
+		transform: translate3d(0, 100%, 0);
+	}
+}
+
+@media (min-width: 720px) {
+	.sheet {
+		left: 50%;
+		right: auto;
+		width: 560px;
+		transform: translateX(-50%);
+		bottom: 0;
+		border-radius: 22px 22px 0 0;
+	}
+	@keyframes sheetup {
+		from {
+			transform: translate3d(-50%, 100%, 0);
+		}
+	}
+}
+
+.sheet-grab {
+	width: 38px;
+	height: 4px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.2);
+	margin: 4px auto 14px;
+}
+
+.sheet h2 {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 660;
+	letter-spacing: -0.02em;
+	line-height: 1.3;
+}
+
+.sheet-when {
+	margin-top: 7px;
+	font-size: 14.5px;
+	color: var(--accent);
+	font-weight: 560;
+}
+
+.sheet-h {
+	margin: 18px 0 7px;
+	font-size: 12px;
+	font-weight: 640;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--dim);
+}
+
+.srcbtn {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	text-align: left;
+	padding: 11px 13px;
+	min-height: 0;
+}
+
+.srcbody {
+	margin: 9px 0 0;
+	padding: 12px;
+	max-height: 260px;
+	overflow: auto;
+	background: #0a0b0d;
+	border: 1px solid var(--edge);
+	border-radius: var(--r-sm);
+	font-size: 12.5px;
+	line-height: 1.55;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--muted);
+}
+
+.sheet-actions {
+	display: grid;
+	gap: 8px;
+	margin-top: 20px;
+}
+.sheet-actions > button {
+	width: 100%;
+}
+
+.fld {
+	display: block;
+	margin-bottom: 11px;
+}
+.fld > span {
+	display: block;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--dim);
+	margin-bottom: 5px;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+select {
+	font: inherit;
+	font-size: 16px;
+	width: 100%;
+	color: var(--text);
+	background: var(--fill-field);
+	border: 1px solid var(--edge);
+	border-radius: 12px;
+	padding: 13px 14px;
+	outline: none;
+	appearance: none;
+}
+
+/* -------------------------------------------------------------- switches */
+
+.sw-row {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 12px 0;
+	border-top: 1px solid var(--edge);
+	margin-top: 10px;
+	font-size: 14.5px;
+}
+.sw-row > div:first-child {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Native checkbox restyled rather than a div: it stays keyboard reachable and
+   announces itself correctly to VoiceOver. */
+.sw {
+	appearance: none;
+	flex: none;
+	width: 50px;
+	height: 30px;
+	border-radius: 999px;
+	background: var(--fill-field);
+	border: 1px solid var(--edge);
+	position: relative;
+	transition: background-color 0.18s var(--ease);
+	padding: 0;
+	margin: 0;
+}
+.sw::after {
+	content: '';
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: #cdd3dc;
+	transition: transform 0.2s var(--ease);
+}
+.sw:checked {
+	background: #3f7fe0;
+	border-color: rgba(150, 195, 255, 0.4);
+}
+.sw:checked::after {
+	transform: translateX(20px);
+	background: #fff;
 }

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Cal, Mail } from '$lib/api.js';
 	import { toast } from '$lib/toast.svelte.js';
+	import EventSheet from '$lib/EventSheet.svelte';
 
 	let view = $state('calendar'); // calendar | mail | review
 	let loading = $state(true);
@@ -15,6 +16,7 @@
 	let cursor = $state(new Date()); // month being shown
 	let selected = $state(startOfDay(new Date()));
 	let busy = $state('');
+	let sheet = $state(null);
 
 	function startOfDay(d) {
 		const x = new Date(d);
@@ -207,7 +209,7 @@
 		<p class="muted" style="padding:8px 2px">Nothing scheduled.</p>
 	{:else}
 		{#each dayEvents as e (e.id)}
-			<div class="ev">
+			<button class="ev" onclick={() => (sheet = e)}>
 				<div class="ev-time">{fmtTime(e)}</div>
 				<div class="ev-body">
 					<div class="row">
@@ -219,16 +221,8 @@
 					{#if e.source_subject}
 						<div class="muted" style="font-size:12px;margin-top:3px">from “{e.source_subject}”</div>
 					{/if}
-					{#if e.state === 'proposed'}
-						<div class="row" style="margin-top:8px;gap:6px">
-							<button onclick={() => setState(e, 'confirmed')} disabled={busy === e.id}
-								style="min-height:36px;padding:6px 13px;font-size:13px">Add</button>
-							<button class="ghost" onclick={() => setState(e, 'rejected')} disabled={busy === e.id}
-								style="min-height:36px;padding:6px 13px;font-size:13px">Dismiss</button>
-						</div>
-					{/if}
 				</div>
-			</div>
+			</button>
 		{/each}
 	{/if}
 
@@ -265,7 +259,8 @@
 		</div>
 		{#each proposed as e (e.id)}
 			<div class="card" style="min-height:0">
-				<div class="row">
+				<div class="row" role="button" tabindex="0" style="cursor:pointer"
+					onclick={() => (sheet = e)} onkeydown={(k) => k.key === 'Enter' && (sheet = e)}>
 					<strong>{e.title}</strong>
 					<span class="spacer"></span>
 					<span class="pill">{e.kind}</span>
@@ -296,4 +291,20 @@
 			</div>
 		{/each}
 	{/if}
+{/if}
+
+{#if sheet}
+	<EventSheet
+		event={sheet}
+		onclose={() => (sheet = null)}
+		onchanged={(ev, state) => {
+			proposed = proposed.filter((x) => x.id !== ev.id);
+			if (state === 'rejected' || state === 'deleted') {
+				events = events.filter((x) => x.id !== ev.id);
+			} else {
+				events = events.map((x) => (x.id === ev.id ? ev : x));
+			}
+			counts = { ...counts, proposed: proposed.length };
+		}}
+	/>
 {/if}
