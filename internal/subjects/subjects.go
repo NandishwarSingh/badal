@@ -56,9 +56,9 @@ func New(pool *pgxpool.Pool, apiKey, model string) *Service {
 	}
 }
 
-func (s *Service) Enabled() bool  { return s.apiKey != "" }
-func (s *Service) Tagging() bool  { return s.busy.Load() }
-func (s *Service) Model() string  { return s.model }
+func (s *Service) Enabled() bool { return s.apiKey != "" }
+func (s *Service) Tagging() bool { return s.busy.Load() }
+func (s *Service) Model() string { return s.model }
 
 // ---------------------------------------------------------------- taxonomy
 
