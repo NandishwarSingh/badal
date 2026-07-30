@@ -4,7 +4,7 @@
 	import { state as sync } from '$lib/sync.svelte.js';
 
 	let q = $state('');
-	let mode = $state('semantic'); // semantic | keyword
+	let mode = $state('hybrid'); // semantic | keyword
 	let hits = $state([]);
 	let searched = $state(false);
 	let busy = $state(false);
@@ -15,7 +15,7 @@
 		clearTimeout(timer);
 		// Semantic costs an embedding call per query, so wait a little longer
 		// than a local keyword search would.
-		timer = setTimeout(go, mode === 'semantic' ? 420 : 220);
+		timer = setTimeout(go, mode === 'hybrid' ? 420 : 220);
 	}
 
 	async function go() {
@@ -63,7 +63,7 @@
 	type="search" enterkeyhint="search" onkeydown={(e) => e.key === 'Enter' && go()} />
 
 <div class="seg" style="margin-top:11px">
-	<button class:on={mode === 'semantic'} onclick={() => setMode('semantic')}>By meaning</button>
+	<button class:on={mode === 'hybrid'} onclick={() => setMode('hybrid')}>Smart</button>
 	<button class:on={mode === 'keyword'} onclick={() => setMode('keyword')}>Exact words</button>
 </div>
 
@@ -75,7 +75,7 @@
 {#if searched && hits.length === 0 && !busy}
 	<div class="empty">
 		No matches for “{q}”.
-		{#if mode === 'semantic'}<br /><span class="muted">Try exact words instead.</span>{/if}
+		{#if mode === 'hybrid'}<br /><span class="muted">Try exact words instead.</span>{/if}
 	</div>
 {/if}
 

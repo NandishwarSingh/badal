@@ -95,7 +95,9 @@ export const Mail = {
 };
 
 export const Search = {
-	all: (q, mode, limit = 25) =>
+	// Default mode is hybrid: vector and full-text fused. "semantic" is kept
+	// so the difference stays measurable.
+	all: (q, mode = 'hybrid', limit = 25) =>
 		api(`/v1/search/all?q=${encodeURIComponent(q)}&mode=${mode}&limit=${limit}`),
 	embedStats: () => api('/v1/embeddings/stats'),
 	backfill: (limit = 25) => api(`/v1/embeddings/backfill?limit=${limit}`, { method: 'POST' })

@@ -757,17 +757,33 @@ func main() {
 		if tp := r.URL.Query().Get("types"); tp != "" {
 			types = strings.Split(tp, ",")
 		}
-		if mode == "semantic" {
+		if mode == "semantic" || mode == "hybrid" || mode == "" {
 			if !embSvc.Enabled() {
 				httpx.Err(w, http.StatusServiceUnavailable, "no_embeddings", "embedding key not configured")
 				return
 			}
-			hits, err := embSvc.Semantic(r.Context(), q, limit, types)
+			var hits []embed.Hit
+			var err error
+			switch mode {
+			case "semantic":
+				// Vector only, kept so the A2 improvement stays measurable.
+				hits, err = embSvc.Semantic(r.Context(), q, limit, types)
+			default:
+				// Rerank is OPT-IN (?rerank=1), not default. Measured on this
+				// corpus it was neutral at best and actively wrong at worst --
+				// it ranked three cultural festivals above the mess circular
+				// for "free food on campus", and those emails contain no food
+				// reference at all. Kept behind a flag so A5's eval harness can
+				// re-test it against a larger corpus.
+				hits, err = embSvc.Retrieve(r.Context(), q, limit, types,
+					r.URL.Query().Get("rerank") == "1")
+				mode = "hybrid"
+			}
 			if err != nil {
 				httpx.Err(w, 500, "search_failed", err.Error())
 				return
 			}
-			httpx.JSON(w, 200, map[string]any{"hits": hits, "count": len(hits), "mode": "semantic"})
+			httpx.JSON(w, 200, map[string]any{"hits": hits, "count": len(hits), "mode": mode})
 			return
 		}
 		// Keyword falls through to the existing note full-text search.

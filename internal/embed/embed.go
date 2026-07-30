@@ -350,6 +350,10 @@ func (s *Service) Backfill(ctx context.Context, limit int) (BackfillResult, erro
 // ------------------------------------------------------------------ search
 
 type Hit struct {
+	// Full text of the source, carried for reranking only and stripped before
+	// the response. A cross-encoder judges query against document, so feeding
+	// it a 400-char window of boilerplate headers is what makes it wrong.
+	Parent     string     `json:"-"`
 	SourceType string     `json:"source_type"`
 	SourceID   uuid.UUID  `json:"source_id"`
 	Title      string     `json:"title"`
