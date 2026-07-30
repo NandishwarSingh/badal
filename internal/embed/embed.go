@@ -344,13 +344,14 @@ type Hit struct {
 	Score      float64    `json:"score"`
 	OccurredAt *time.Time `json:"occurred_at,omitempty"`
 	Slug       string     `json:"slug,omitempty"`
+	Subjects   []string   `json:"subjects,omitempty"`
 }
 
 // Semantic returns nearest neighbours, best chunk per source.
 //
 // DISTINCT ON collapses chunks to one row per source: without it a long email
 // with five matching paragraphs would fill the whole result page by itself.
-func (s *Service) Semantic(ctx context.Context, query string, limit int, types []string) ([]Hit, error) {
+func (s *Service) Semantic(ctx context.Context, query string, limit int, types, subs []string) ([]Hit, error) {
 	if strings.TrimSpace(query) == "" {
 		return []Hit{}, nil
 	}
@@ -363,7 +364,7 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types [
 	}
 	q := vecString(vecs[0])
 
-	tx, err := s.beginSearch(ctx)
+	tx, err := s.beginSearch(ctx, len(subs) > 0)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +379,7 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types [
 		         embedding <=> $1::halfvec AS dist
 		    FROM embeddings
 		   WHERE ($3::text[] IS NULL OR source_type = ANY($3))
+		     AND ($5::text[] IS NULL OR subjects && $5)
 		   ORDER BY embedding <=> $1::halfvec
 		   LIMIT $4
 		), best AS (
@@ -388,13 +390,19 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types [
 		)
 		SELECT b.source_type, b.source_id,
 		       coalesce(n.title, m.subject, v.title, '') AS title,
-		       b.content, b.score, b.occurred_at, coalesce(n.slug,'')
+		       b.content, b.score, b.occurred_at, coalesce(n.slug,''),
+		       coalesce(sj.subs, '{}')
 		  FROM best b
 		  LEFT JOIN notes    n ON b.source_type='note'    AND n.id = b.source_id
 		  LEFT JOIN messages m ON b.source_type='message' AND m.id = b.source_id
 		  LEFT JOIN events   v ON b.source_type='event'   AND v.id = b.source_id
+		  LEFT JOIN LATERAL (
+		    SELECT array_agg(ss.slug ORDER BY ss.confidence DESC) AS subs
+		      FROM source_subjects ss
+		     WHERE ss.source_type = b.source_type AND ss.source_id = b.source_id
+		  ) sj ON true
 		 ORDER BY b.score DESC
-		 LIMIT $2`, q, limit, nilIfEmpty(types), fanout(limit))
+		 LIMIT $2`, q, limit, nilIfEmpty(types), fanout(limit), nilIfEmpty(subs))
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +411,7 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types [
 	for rows.Next() {
 		var h Hit
 		if err := rows.Scan(&h.SourceType, &h.SourceID, &h.Title, &h.Snippet,
-			&h.Score, &h.OccurredAt, &h.Slug); err != nil {
+			&h.Score, &h.OccurredAt, &h.Slug, &h.Subjects); err != nil {
 			return nil, err
 		}
 		h.Snippet = squeeze(h.Snippet, 220)
@@ -451,12 +459,24 @@ func fanout(limit int) int {
 // beginSearch opens a read-only transaction with ef_search raised. It has to be
 // a transaction: SET LOCAL is the only form that cannot leak the setting onto
 // the next borrower of a pooled connection.
-func (s *Service) beginSearch(ctx context.Context) (pgx.Tx, error) {
+//
+// filtered turns on iterative scan. An HNSW scan finds neighbours first and
+// applies the WHERE clause afterwards, so a narrow filter -- "only Internships"
+// -- can return almost nothing while plenty of matches exist just past the
+// fixed candidate window. Iterative scan keeps pulling batches until enough
+// rows survive the filter. relaxed_order lets it do that without re-sorting
+// each batch into strict distance order, which costs a little ordering
+// precision that fusion and reranking then wash out anyway.
+func (s *Service) beginSearch(ctx context.Context, filtered bool) (pgx.Tx, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `SET LOCAL hnsw.ef_search = `+strconv.Itoa(efSearch)); err != nil {
+	set := `SET LOCAL hnsw.ef_search = ` + strconv.Itoa(efSearch)
+	if filtered {
+		set += `; SET LOCAL hnsw.iterative_scan = relaxed_order`
+	}
+	if _, err := tx.Exec(ctx, set); err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, err
 	}

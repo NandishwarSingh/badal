@@ -66,7 +66,7 @@ type scored struct {
 // Neither half is sufficient alone. Dense retrieval misses exact tokens --
 // course codes, room numbers, surnames -- because they carry little semantic
 // weight. BM25 misses paraphrase entirely: "free food" never matches "mess".
-func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []string) ([]Hit, error) {
+func (s *Service) Hybrid(ctx context.Context, query string, limit int, types, subs []string) ([]Hit, error) {
 	if strings.TrimSpace(query) == "" {
 		return []Hit{}, nil
 	}
@@ -86,7 +86,7 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 	}
 	q := vecString(vecs[0])
 
-	tx, err := s.beginSearch(ctx)
+	tx, err := s.beginSearch(ctx, len(subs) > 0)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +101,7 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 		         embedding <=> $1::halfvec AS dist
 		    FROM embeddings
 		   WHERE ($4::text[] IS NULL OR source_type = ANY($4))
+		     AND ($6::text[] IS NULL OR subjects && $6)
 		   ORDER BY embedding <=> $1::halfvec
 		   LIMIT $5
 		), vec AS (
@@ -120,6 +121,7 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 		    FROM embeddings
 		   WHERE $2 <> '' AND content_tsv @@ to_tsquery('english', $2)
 		     AND ($4::text[] IS NULL OR source_type = ANY($4))
+		     AND ($6::text[] IS NULL OR subjects && $6)
 		   ORDER BY score DESC
 		   LIMIT $5
 		), fts AS (
@@ -143,12 +145,18 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 		SELECT m.source_type, m.source_id,
 		       coalesce(n.title, ms.subject, ev.title, '') AS title,
 		       m.content, m.parent, m.occurred_at, coalesce(n.slug,''),
-		       coalesce(m.vrank, 0), coalesce(m.frank, 0)
+		       coalesce(m.vrank, 0), coalesce(m.frank, 0),
+		       coalesce(sj.subs, '{}')
 		  FROM merged m
 		  LEFT JOIN notes    n  ON m.source_type='note'    AND n.id  = m.source_id
 		  LEFT JOIN messages ms ON m.source_type='message' AND ms.id = m.source_id
-		  LEFT JOIN events   ev ON m.source_type='event'   AND ev.id = m.source_id`,
-		q, orTSQuery(query), depth, nilIfEmpty(types), fanout(depth))
+		  LEFT JOIN events   ev ON m.source_type='event'   AND ev.id = m.source_id
+		  LEFT JOIN LATERAL (
+		    SELECT array_agg(ss.slug ORDER BY ss.confidence DESC) AS subs
+		      FROM source_subjects ss
+		     WHERE ss.source_type = m.source_type AND ss.source_id = m.source_id
+		  ) sj ON true`,
+		q, orTSQuery(query), depth, nilIfEmpty(types), fanout(depth), nilIfEmpty(subs))
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +166,8 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 	for rows.Next() {
 		var c scored
 		if err := rows.Scan(&c.SourceType, &c.SourceID, &c.Title, &c.Snippet,
-			&c.Parent, &c.OccurredAt, &c.Slug, &c.vecRank, &c.ftsRank); err != nil {
+			&c.Parent, &c.OccurredAt, &c.Slug, &c.vecRank, &c.ftsRank,
+			&c.Subjects); err != nil {
 			return nil, err
 		}
 		if c.vecRank > 0 {
@@ -277,8 +286,8 @@ const rerankModel = "cohere/rerank-v3.5"
 //
 // Reranking failure is not fatal -- fused results are still good, and a search
 // that degrades is better than one that errors.
-func (s *Service) Retrieve(ctx context.Context, query string, limit int, types []string, rerank bool) ([]Hit, error) {
-	hits, err := s.Hybrid(ctx, query, limit, types)
+func (s *Service) Retrieve(ctx context.Context, query string, limit int, types, subs []string, rerank bool) ([]Hit, error) {
+	hits, err := s.Hybrid(ctx, query, limit, types, subs)
 	if err != nil {
 		return nil, err
 	}

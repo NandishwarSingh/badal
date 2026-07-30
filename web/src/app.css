@@ -20,70 +20,74 @@
  */
 
 :root {
-	--bg: #000000;
+  --bg: #000000;
 
-	/* Against pure black there is nothing to show through, so definition comes
+  /* Against pure black there is nothing to show through, so definition comes
 	   from the rim and border rather than from transparency. */
-	--fill: #14161a;
-	--fill-hi: #20232a;
-	--fill-field: #0d0e11;
-	--sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 58%);
+  --fill: #14161a;
+  --fill-hi: #20232a;
+  --fill-field: #0d0e11;
+  --sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.055),
+    rgba(255, 255, 255, 0) 58%
+  );
 
-	--edge: rgba(255, 255, 255, 0.085);
-	--edge-hi: rgba(255, 255, 255, 0.2);
-	/* Zero-blur inset highlight = the lit rim of a glass panel, free to paint. */
-	--rim: inset 0 1px 0 rgba(255, 255, 255, 0.09);
-	--rim-hi: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --edge: rgba(255, 255, 255, 0.085);
+  --edge-hi: rgba(255, 255, 255, 0.2);
+  /* Zero-blur inset highlight = the lit rim of a glass panel, free to paint. */
+  --rim: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --rim-hi: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 
-	--text: #f1f3f7;
-	--muted: #838b98;
-	--dim: #5b626d;
+  --text: #f1f3f7;
+  --muted: #838b98;
+  --dim: #5b626d;
 
-	--accent: #5b9dff;
-	--accent-soft: rgba(91, 157, 255, 0.14);
-	--warn: #ffc453;
-	--danger: #ff6b6b;
-	--ok: #4ade80;
+  --accent: #5b9dff;
+  --accent-soft: rgba(91, 157, 255, 0.14);
+  --warn: #ffc453;
+  --danger: #ff6b6b;
+  --ok: #4ade80;
 
-	--r-sm: 11px;
-	--r: 16px;
+  --r-sm: 11px;
+  --r: 16px;
 
-	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-	/* Sheets get their own curves: a soft overshoot-free decelerate on entry,
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* Sheets get their own curves: a soft overshoot-free decelerate on entry,
 	   a sharper accelerate on exit. */
-	--sheet-ease: cubic-bezier(0.16, 0.84, 0.28, 1);
-	--sheet-exit: cubic-bezier(0.5, 0, 0.75, 0);
-	--tabbar: 60px;
-	--safe-b: env(safe-area-inset-bottom, 0px);
-	--safe-t: env(safe-area-inset-top, 0px);
-	color-scheme: dark;
+  --sheet-ease: cubic-bezier(0.16, 0.84, 0.28, 1);
+  --sheet-exit: cubic-bezier(0.5, 0, 0.75, 0);
+  --tabbar: 60px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  color-scheme: dark;
 }
 
 * {
-	box-sizing: border-box;
-	-webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
 body {
-	margin: 0;
-	padding: 0;
-	min-height: 100%;
-	background-color: var(--bg);
-	overscroll-behavior-y: none;
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background-color: var(--bg);
+  overscroll-behavior-y: none;
 }
 
 body {
-	color: var(--text);
-	font:
-		16px/1.55 -apple-system,
-		BlinkMacSystemFont,
-		'SF Pro Text',
-		'Segoe UI',
-		Roboto,
-		sans-serif;
-	-webkit-text-size-adjust: 100%;
-	-webkit-font-smoothing: antialiased;
+  color: var(--text);
+  font:
+    16px/1.55 -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ----------------------------------------------------------- primitives */
@@ -92,530 +96,538 @@ body {
 .card,
 .tabbar,
 .toast {
-	background-color: var(--fill);
-	background-image: var(--sheen);
-	border: 1px solid var(--edge);
-	box-shadow: var(--rim);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  border: 1px solid var(--edge);
+  box-shadow: var(--rim);
 }
 
 /* --------------------------------------------------------------- layout */
 
 .app {
-	min-height: 100dvh;
-	display: flex;
-	flex-direction: column;
-	padding-top: var(--safe-t);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-t);
 }
 
 .topbar {
-	position: sticky;
-	top: 0;
-	z-index: 20;
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 11px 15px;
-	min-height: 54px;
-	/* Pure black and borderless, so the bar disappears into the page and
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 15px;
+  min-height: 54px;
+  /* Pure black and borderless, so the bar disappears into the page and
 	   content simply passes behind it as you scroll. Still opaque -- a
 	   translucent sticky bar forces a repaint of everything behind it on
 	   every scroll frame. */
-	background: var(--bg);
+  background: var(--bg);
 }
 
 .topbar h1 {
-	font-size: 19px;
-	font-weight: 640;
-	margin: 0;
-	letter-spacing: -0.022em;
-	flex: 1;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+  font-size: 19px;
+  font-weight: 640;
+  margin: 0;
+  letter-spacing: -0.022em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 main {
-	flex: 1;
-	padding: 13px 15px calc(var(--tabbar) + var(--safe-b) + 26px);
-	max-width: 880px;
-	width: 100%;
-	margin: 0 auto;
+  flex: 1;
+  padding: 13px 15px calc(var(--tabbar) + var(--safe-b) + 26px);
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 /* -------------------------------------------------------------- tab bar */
 
 .tabbar {
-	position: fixed;
-	left: 9px;
-	right: 9px;
-	bottom: calc(var(--safe-b) + 8px);
-	z-index: 30;
-	display: grid;
-	grid-template-columns: repeat(5, 1fr);
-	border-radius: 20px;
-	/* Near-opaque so it needs nothing from behind it. */
-	background-color: #101216;
-	box-shadow:
-		var(--rim),
-		0 6px 18px rgba(0, 0, 0, 0.55);
-	overflow: hidden;
+  position: fixed;
+  left: 9px;
+  right: 9px;
+  bottom: calc(var(--safe-b) + 8px);
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border-radius: 20px;
+  /* Near-opaque so it needs nothing from behind it. */
+  background-color: #101216;
+  box-shadow:
+    var(--rim),
+    0 6px 18px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
 }
 
 .tabbar a {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 3px;
-	height: var(--tabbar);
-	color: var(--dim);
-	text-decoration: none;
-	font-size: 10.5px;
-	font-weight: 550;
-	transition: color 0.16s var(--ease);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: var(--tabbar);
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 10.5px;
+  font-weight: 550;
+  transition: color 0.16s var(--ease);
 }
 
 .tabbar a.active {
-	color: var(--text);
+  color: var(--text);
 }
 
 /* Static. A pill that springs in on every tab change is a paint on the
    busiest element in the app, at the exact moment it is busiest. */
 .tabbar a.active::before {
-	content: '';
-	position: absolute;
-	inset: 6px 9px;
-	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.075);
+  content: "";
+  position: absolute;
+  inset: 6px 9px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.075);
 }
 
 .tabbar svg {
-	width: 21px;
-	height: 21px;
-	stroke: currentColor;
-	fill: none;
-	stroke-width: 1.85;
-	stroke-linecap: round;
-	stroke-linejoin: round;
-	position: relative;
+  width: 21px;
+  height: 21px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  position: relative;
 }
 
 /* ----------------------------------------------------------------- cards */
 
 .card {
-	display: block;
-	position: relative;
-	padding: 14px 16px;
-	margin-bottom: 9px;
-	min-height: 56px;
-	text-decoration: none;
-	color: inherit;
-	border-radius: var(--r);
-	/* Skip painting rows that are off screen entirely. Biggest single win on
+  display: block;
+  position: relative;
+  padding: 14px 16px;
+  margin-bottom: 9px;
+  min-height: 56px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--r);
+  /* Skip painting rows that are off screen entirely. Biggest single win on
 	   a long list, and it costs one line. */
-	content-visibility: auto;
-	contain-intrinsic-size: auto 88px;
-	transition:
-		background-color 0.16s var(--ease),
-		border-color 0.16s var(--ease);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+  transition:
+    background-color 0.16s var(--ease),
+    border-color 0.16s var(--ease);
 }
 
 .card:active {
-	background-color: var(--fill-hi);
-	border-color: var(--edge-hi);
-	box-shadow: var(--rim-hi);
+  background-color: var(--fill-hi);
+  border-color: var(--edge-hi);
+  box-shadow: var(--rim-hi);
 }
 
 /* Unsynced. Opacity only, which the compositor handles without repainting. */
 .card.pending {
-	animation: breathe 2.2s var(--ease) infinite;
+  animation: breathe 2.2s var(--ease) infinite;
 }
 
 @keyframes breathe {
-	0%,
-	100% {
-		opacity: 1;
-	}
-	50% {
-		opacity: 0.68;
-	}
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.68;
+  }
 }
 
 .card h3 {
-	margin: 0 0 3px;
-	font-size: 16px;
-	font-weight: 610;
-	letter-spacing: -0.015em;
+  margin: 0 0 3px;
+  font-size: 16px;
+  font-weight: 610;
+  letter-spacing: -0.015em;
 }
 
 .card p {
-	margin: 0;
-	color: var(--muted);
-	font-size: 14px;
-	display: -webkit-box;
-	-webkit-line-clamp: 2;
-	line-clamp: 2;
-	-webkit-box-orient: vertical;
-	overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .row {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .spacer {
-	flex: 1;
+  flex: 1;
 }
 
 .tag {
-	font-size: 11px;
-	padding: 2.5px 9px;
-	border-radius: 999px;
-	background: var(--accent-soft);
-	color: var(--accent);
-	font-weight: 600;
-	border: 1px solid rgba(91, 157, 255, 0.18);
+  font-size: 11px;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  border: 1px solid rgba(91, 157, 255, 0.18);
 }
 
 .muted {
-	color: var(--muted);
-	font-size: 13px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .pill {
-	font-size: 10.5px;
-	padding: 2.5px 9px;
-	border-radius: 999px;
-	border: 1px solid var(--edge);
-	color: var(--muted);
-	background: rgba(255, 255, 255, 0.035);
-	font-weight: 550;
-	white-space: nowrap;
+  font-size: 10.5px;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-weight: 550;
+  white-space: nowrap;
 }
 .pill.warn {
-	color: var(--warn);
-	border-color: rgba(255, 196, 83, 0.3);
+  color: var(--warn);
+  border-color: rgba(255, 196, 83, 0.3);
 }
 .pill.ok {
-	color: var(--ok);
-	border-color: rgba(74, 222, 128, 0.28);
+  color: var(--ok);
+  border-color: rgba(74, 222, 128, 0.28);
 }
 
 /* -------------------------------------------------------------- controls */
 
 button,
 .btn {
-	font: inherit;
-	font-weight: 600;
-	font-size: 15px;
-	border-radius: 12px;
-	border: 1px solid var(--edge);
-	background-color: var(--fill);
-	background-image: var(--sheen);
-	box-shadow: var(--rim);
-	color: var(--text);
-	padding: 12px 16px;
-	min-height: 46px;
-	cursor: pointer;
-	text-decoration: none;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 8px;
-	transition:
-		background-color 0.14s var(--ease),
-		opacity 0.14s var(--ease);
+  font: inherit;
+  font-weight: 600;
+  font-size: 15px;
+  border-radius: 12px;
+  border: 1px solid var(--edge);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  box-shadow: var(--rim);
+  color: var(--text);
+  padding: 12px 16px;
+  min-height: 46px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    background-color 0.14s var(--ease),
+    opacity 0.14s var(--ease);
 }
 
 button:active,
 .btn:active {
-	background-color: var(--fill-hi);
+  background-color: var(--fill-hi);
 }
 
 button.primary,
 .btn.primary {
-	background-color: #3f7fe0;
-	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
-	border-color: rgba(150, 195, 255, 0.34);
-	color: #fff;
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background-color: #3f7fe0;
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16),
+    rgba(255, 255, 255, 0)
+  );
+  border-color: rgba(150, 195, 255, 0.34);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 button.primary:active {
-	background-color: #356fc9;
+  background-color: #356fc9;
 }
 
 button.ghost {
-	background: none;
-	border-color: transparent;
-	box-shadow: none;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
 }
 button.danger {
-	color: var(--danger);
-	border-color: rgba(255, 107, 107, 0.3);
-	background-color: rgba(255, 107, 107, 0.07);
-	background-image: none;
-	box-shadow: none;
+  color: var(--danger);
+  border-color: rgba(255, 107, 107, 0.3);
+  background-color: rgba(255, 107, 107, 0.07);
+  background-image: none;
+  box-shadow: none;
 }
 button:disabled {
-	opacity: 0.36;
-	pointer-events: none;
+  opacity: 0.36;
+  pointer-events: none;
 }
 
 input,
 textarea {
-	font: inherit;
-	/* 16px minimum, or iOS zooms the viewport on focus. */
-	font-size: 16px;
-	width: 100%;
-	color: var(--text);
-	background: var(--fill-field);
-	border: 1px solid var(--edge);
-	border-radius: 12px;
-	padding: 13px 14px;
-	outline: none;
-	transition: border-color 0.14s var(--ease);
+  font: inherit;
+  /* 16px minimum, or iOS zooms the viewport on focus. */
+  font-size: 16px;
+  width: 100%;
+  color: var(--text);
+  background: var(--fill-field);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 13px 14px;
+  outline: none;
+  transition: border-color 0.14s var(--ease);
 }
 input::placeholder,
 textarea::placeholder {
-	color: var(--dim);
+  color: var(--dim);
 }
 input:focus,
 textarea:focus {
-	border-color: rgba(91, 157, 255, 0.55);
+  border-color: rgba(91, 157, 255, 0.55);
 }
 
 textarea {
-	resize: none;
-	line-height: 1.62;
-	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 15px;
+  resize: none;
+  line-height: 1.62;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
 }
 
 .fab {
-	position: fixed;
-	right: 16px;
-	bottom: calc(var(--tabbar) + var(--safe-b) + 22px);
-	z-index: 25;
-	width: 56px;
-	height: 56px;
-	border-radius: 50%;
-	padding: 0;
-	font-size: 26px;
-	font-weight: 300;
-	color: #fff;
-	background-color: #3f7fe0;
-	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
-	border: 1px solid rgba(150, 195, 255, 0.34);
-	box-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.24),
-		0 6px 16px rgba(0, 0, 0, 0.5);
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--tabbar) + var(--safe-b) + 22px);
+  z-index: 25;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 26px;
+  font-weight: 300;
+  color: #fff;
+  background-color: #3f7fe0;
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.18),
+    rgba(255, 255, 255, 0)
+  );
+  border: 1px solid rgba(150, 195, 255, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 6px 16px rgba(0, 0, 0, 0.5);
 }
 .fab:active {
-	background-color: #356fc9;
+  background-color: #356fc9;
 }
 
 /* ---------------------------------------------------------------- editor */
 
 .editor-title {
-	border: none;
-	background: none;
-	font-size: 23px;
-	font-weight: 700;
-	padding: 7px 0;
-	letter-spacing: -0.028em;
+  border: none;
+  background: none;
+  font-size: 23px;
+  font-weight: 700;
+  padding: 7px 0;
+  letter-spacing: -0.028em;
 }
 .editor-title:focus {
-	border: none;
+  border: none;
 }
 
 .editor-body {
-	border: none;
-	background: none;
-	padding: 0;
-	min-height: 54dvh;
+  border: none;
+  background: none;
+  padding: 0;
+  min-height: 54dvh;
 }
 .editor-body:focus {
-	border: none;
+  border: none;
 }
 
 .rendered {
-	font-size: 16px;
+  font-size: 16px;
 }
 .rendered h1 {
-	font-size: 22px;
-	letter-spacing: -0.02em;
+  font-size: 22px;
+  letter-spacing: -0.02em;
 }
 .rendered h2 {
-	font-size: 19px;
+  font-size: 19px;
 }
 .rendered h3 {
-	font-size: 17px;
+  font-size: 17px;
 }
 .rendered pre {
-	background: rgba(255, 255, 255, 0.045);
-	border: 1px solid var(--edge);
-	padding: 12px;
-	border-radius: var(--r-sm);
-	overflow-x: auto;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--edge);
+  padding: 12px;
+  border-radius: var(--r-sm);
+  overflow-x: auto;
 }
 .rendered code {
-	background: rgba(255, 255, 255, 0.06);
-	padding: 1.5px 6px;
-	border-radius: 6px;
-	font-size: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1.5px 6px;
+  border-radius: 6px;
+  font-size: 14px;
 }
 .rendered a.wiki {
-	color: var(--accent);
-	text-decoration: none;
-	border-bottom: 1px dashed rgba(91, 157, 255, 0.4);
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(91, 157, 255, 0.4);
 }
 .rendered ul {
-	padding-left: 21px;
+  padding-left: 21px;
 }
 
 /* --------------------------------------------------------------- notices */
 
 .banner {
-	border-radius: var(--r-sm);
-	padding: 11px 14px;
-	margin-bottom: 11px;
-	font-size: 14px;
-	border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  padding: 11px 14px;
+  margin-bottom: 11px;
+  font-size: 14px;
+  border: 1px solid var(--edge);
 }
 .banner.warn {
-	color: var(--warn);
-	border-color: rgba(255, 196, 83, 0.28);
-	background-color: rgba(255, 196, 83, 0.07);
+  color: var(--warn);
+  border-color: rgba(255, 196, 83, 0.28);
+  background-color: rgba(255, 196, 83, 0.07);
 }
 .banner.err {
-	color: var(--danger);
-	border-color: rgba(255, 107, 107, 0.28);
-	background-color: rgba(255, 107, 107, 0.07);
+  color: var(--danger);
+  border-color: rgba(255, 107, 107, 0.28);
+  background-color: rgba(255, 107, 107, 0.07);
 }
 .banner.info {
-	color: var(--accent);
-	border-color: rgba(91, 157, 255, 0.26);
-	background-color: rgba(91, 157, 255, 0.07);
+  color: var(--accent);
+  border-color: rgba(91, 157, 255, 0.26);
+  background-color: rgba(91, 157, 255, 0.07);
 }
 
 .empty {
-	text-align: center;
-	color: var(--muted);
-	padding: 60px 22px;
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 22px;
 }
 
 .toast {
-	position: fixed;
-	left: 50%;
-	bottom: calc(var(--tabbar) + var(--safe-b) + 84px);
-	z-index: 60;
-	padding: 10px 17px;
-	border-radius: 999px;
-	font-size: 13.5px;
-	font-weight: 560;
-	background-color: #1e2127;
-	background-image: none;
-	box-shadow:
-		var(--rim),
-		0 6px 18px rgba(0, 0, 0, 0.5);
-	pointer-events: none;
-	white-space: nowrap;
-	/* Centring via transform avoids a layout pass, and this is one small
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar) + var(--safe-b) + 84px);
+  z-index: 60;
+  padding: 10px 17px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 560;
+  background-color: #1e2127;
+  background-image: none;
+  box-shadow:
+    var(--rim),
+    0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+  /* Centring via transform avoids a layout pass, and this is one small
 	   element rather than one per row. */
-	transform: translate3d(-50%, 0, 0);
-	animation: toastin 0.18s var(--ease) both;
+  transform: translate3d(-50%, 0, 0);
+  animation: toastin 0.18s var(--ease) both;
 }
 
 @keyframes toastin {
-	from {
-		opacity: 0;
-		transform: translate3d(-50%, 10px, 0);
-	}
+  from {
+    opacity: 0;
+    transform: translate3d(-50%, 10px, 0);
+  }
 }
 
 .toast.actionable {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	pointer-events: auto;
-	padding-right: 7px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+  padding-right: 7px;
 }
 
 .toast-action {
-	min-height: 0;
-	padding: 5px 13px;
-	font-size: 13px;
-	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.12);
-	background-image: none;
-	border: 1px solid var(--edge-hi);
-	box-shadow: none;
-	color: var(--accent);
+  min-height: 0;
+  padding: 5px 13px;
+  font-size: 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  background-image: none;
+  border: 1px solid var(--edge-hi);
+  box-shadow: none;
+  color: var(--accent);
 }
 
 .spinner {
-	width: 15px;
-	height: 15px;
-	border-radius: 50%;
-	border: 2px solid rgba(255, 255, 255, 0.16);
-	border-top-color: var(--accent);
-	animation: spin 0.7s linear infinite;
-	display: inline-block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
 }
 @keyframes spin {
-	to {
-		transform: rotate(360deg);
-	}
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ------------------------------------------------------------ desktop up */
 
 @media (min-width: 820px) {
-	.tabbar {
-		position: sticky;
-		top: 12px;
-		left: auto;
-		right: auto;
-		bottom: auto;
-		margin: 0 auto 16px;
-		width: max-content;
-		grid-template-columns: repeat(5, max-content);
-		border-radius: 16px;
-	}
-	.tabbar a {
-		flex-direction: row;
-		height: 42px;
-		padding: 0 20px;
-		font-size: 13.5px;
-		gap: 8px;
-	}
-	.tabbar a.active::before {
-		inset: 4px 6px;
-		border-radius: 12px;
-	}
-	main {
-		padding-bottom: 40px;
-	}
-	.fab {
-		bottom: 26px;
-	}
-	.card:hover {
-		background-color: var(--fill-hi);
-		border-color: var(--edge-hi);
-	}
+  .tabbar {
+    position: sticky;
+    top: 12px;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: 0 auto 16px;
+    width: max-content;
+    grid-template-columns: repeat(5, max-content);
+    border-radius: 16px;
+  }
+  .tabbar a {
+    flex-direction: row;
+    height: 42px;
+    padding: 0 20px;
+    font-size: 13.5px;
+    gap: 8px;
+  }
+  .tabbar a.active::before {
+    inset: 4px 6px;
+    border-radius: 12px;
+  }
+  main {
+    padding-bottom: 40px;
+  }
+  .fab {
+    bottom: 26px;
+  }
+  .card:hover {
+    background-color: var(--fill-hi);
+    border-color: var(--edge-hi);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-	*,
-	*::before,
-	*::after {
-		animation-duration: 0.01ms !important;
-		animation-iteration-count: 1 !important;
-		transition-duration: 0.01ms !important;
-	}
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ------------------------------------------------------------- conflicts */
@@ -629,323 +641,323 @@ textarea {
  */
 
 .conflict {
-	background-color: var(--fill);
-	background-image: var(--sheen);
-	border: 1px solid rgba(255, 196, 83, 0.28);
-	box-shadow: var(--rim);
-	border-radius: var(--r);
-	padding: 14px 15px;
-	margin-bottom: 14px;
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  border: 1px solid rgba(255, 196, 83, 0.28);
+  box-shadow: var(--rim);
+  border-radius: var(--r);
+  padding: 14px 15px;
+  margin-bottom: 14px;
 }
 
 .conflict-head {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-bottom: 7px;
-	font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 15px;
 }
 
 .conflict-dot {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-	background: var(--warn);
-	flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
 }
 
 .diffstat {
-	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 12px;
-	display: flex;
-	gap: 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  display: flex;
+  gap: 7px;
 }
 .diffstat .plus {
-	color: var(--ok);
+  color: var(--ok);
 }
 .diffstat .minus {
-	color: var(--danger);
+  color: var(--danger);
 }
 
 .diff {
-	border: 1px solid var(--edge);
-	border-radius: var(--r-sm);
-	overflow: hidden;
-	background: #0a0b0d;
-	/* Wrapping beats horizontal scroll on a phone; a long line you cannot see
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: #0a0b0d;
+  /* Wrapping beats horizontal scroll on a phone; a long line you cannot see
 	   the end of is not a diff you can act on. */
-	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 12.5px;
-	line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .dline {
-	display: flex;
-	gap: 8px;
-	padding: 2px 9px 2px 6px;
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+  display: flex;
+  gap: 8px;
+  padding: 2px 9px 2px 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .dline .sign {
-	flex: none;
-	width: 10px;
-	text-align: center;
-	opacity: 0.75;
-	user-select: none;
+  flex: none;
+  width: 10px;
+  text-align: center;
+  opacity: 0.75;
+  user-select: none;
 }
 .dline .txt {
-	flex: 1;
-	min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 /* Tinted, not saturated. A full-strength green block on pure black glows. */
 .dline.add {
-	background: rgba(74, 222, 128, 0.11);
-	color: #b7f5cd;
-	box-shadow: inset 2px 0 0 rgba(74, 222, 128, 0.6);
+  background: rgba(74, 222, 128, 0.11);
+  color: #b7f5cd;
+  box-shadow: inset 2px 0 0 rgba(74, 222, 128, 0.6);
 }
 .dline.del {
-	background: rgba(255, 107, 107, 0.1);
-	color: #ffc4c4;
-	box-shadow: inset 2px 0 0 rgba(255, 107, 107, 0.55);
+  background: rgba(255, 107, 107, 0.1);
+  color: #ffc4c4;
+  box-shadow: inset 2px 0 0 rgba(255, 107, 107, 0.55);
 }
 .dline.same {
-	color: var(--muted);
+  color: var(--muted);
 }
 .dline.gap {
-	justify-content: center;
-	color: var(--dim);
-	font-size: 11px;
-	padding: 5px;
-	background: rgba(255, 255, 255, 0.02);
+  justify-content: center;
+  color: var(--dim);
+  font-size: 11px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .legend {
-	display: flex;
-	gap: 14px;
-	margin-top: 8px;
-	font-size: 11.5px;
-	color: var(--muted);
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 .legend span {
-	display: flex;
-	align-items: center;
-	gap: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .legend i.sw {
-	width: 9px;
-	height: 9px;
-	border-radius: 3px;
-	display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  display: inline-block;
 }
 .legend i.sw.add {
-	background: rgba(74, 222, 128, 0.55);
+  background: rgba(74, 222, 128, 0.55);
 }
 .legend i.sw.del {
-	background: rgba(255, 107, 107, 0.5);
+  background: rgba(255, 107, 107, 0.5);
 }
 
 /* Full-width stacked buttons on a phone: three side by side would each be
    under 44px of comfortable target. */
 .resolve {
-	display: grid;
-	grid-template-columns: 1fr;
-	gap: 8px;
-	margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 12px;
 }
 .resolve button {
-	width: 100%;
+  width: 100%;
 }
 
 @media (min-width: 560px) {
-	.resolve {
-		grid-template-columns: repeat(3, 1fr);
-	}
+  .resolve {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 /* --------------------------------------------------------------- calendar */
 
 .seg {
-	display: grid;
-	grid-auto-flow: column;
-	grid-auto-columns: 1fr;
-	gap: 4px;
-	padding: 4px;
-	margin-bottom: 13px;
-	border-radius: 14px;
-	background-color: var(--fill-field);
-	border: 1px solid var(--edge);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 13px;
+  border-radius: 14px;
+  background-color: var(--fill-field);
+  border: 1px solid var(--edge);
 }
 
 .seg button {
-	min-height: 38px;
-	padding: 7px 10px;
-	font-size: 13.5px;
-	border: none;
-	border-radius: 10px;
-	background: none;
-	background-image: none;
-	box-shadow: none;
-	color: var(--muted);
+  min-height: 38px;
+  padding: 7px 10px;
+  font-size: 13.5px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--muted);
 }
 .seg button.on {
-	background-color: var(--fill-hi);
-	color: var(--text);
-	box-shadow: var(--rim);
+  background-color: var(--fill-hi);
+  color: var(--text);
+  box-shadow: var(--rim);
 }
 
 .segbadge {
-	margin-left: 6px;
-	font-size: 10.5px;
-	padding: 1px 6px;
-	border-radius: 999px;
-	background: var(--warn);
-	color: #1a1206;
-	font-weight: 700;
+  margin-left: 6px;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #1a1206;
+  font-weight: 700;
 }
 
 .calhead {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	margin-bottom: 9px;
-	font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  font-size: 16px;
 }
 .calhead button {
-	min-height: 38px;
-	min-width: 40px;
-	font-size: 20px;
-	padding: 0;
+  min-height: 38px;
+  min-width: 40px;
+  font-size: 20px;
+  padding: 0;
 }
 
 .grid {
-	display: grid;
-	grid-template-columns: repeat(7, 1fr);
-	gap: 2px;
-	padding: 8px;
-	border-radius: var(--r);
-	margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--r);
+  margin-bottom: 16px;
 }
 
 .dow {
-	text-align: center;
-	font-size: 10.5px;
-	font-weight: 650;
-	color: var(--dim);
-	padding-bottom: 4px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--dim);
+  padding-bottom: 4px;
 }
 
 /* Square-ish cells with the number top-aligned, so a row of dots below never
    pushes the date around as events load. */
 .day {
-	aspect-ratio: 1;
-	min-height: 0;
-	padding: 3px 0 0;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 3px;
-	font-size: 13px;
-	font-weight: 520;
-	border: 1px solid transparent;
-	border-radius: 9px;
-	background: none;
-	background-image: none;
-	box-shadow: none;
-	color: var(--text);
+  aspect-ratio: 1;
+  min-height: 0;
+  padding: 3px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 520;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
 }
 .day.other {
-	color: var(--dim);
+  color: var(--dim);
 }
 .day.today {
-	color: var(--accent);
-	font-weight: 750;
+  color: var(--accent);
+  font-weight: 750;
 }
 .day.sel {
-	background-color: var(--fill-hi);
-	border-color: var(--edge-hi);
+  background-color: var(--fill-hi);
+  border-color: var(--edge-hi);
 }
 
 .dots {
-	display: flex;
-	gap: 2.5px;
-	height: 5px;
+  display: flex;
+  gap: 2.5px;
+  height: 5px;
 }
 .dot {
-	width: 4.5px;
-	height: 4.5px;
-	border-radius: 50%;
-	background: var(--accent);
-	display: block;
+  width: 4.5px;
+  height: 4.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: block;
 }
 .dot.deadline {
-	background: var(--danger);
+  background: var(--danger);
 }
 .dot.exam {
-	background: var(--danger);
+  background: var(--danger);
 }
 .dot.meeting {
-	background: var(--ok);
+  background: var(--ok);
 }
 /* Proposed events look different from accepted ones on the grid, so an
    unreviewed date never masquerades as a commitment. */
 .dot.prop {
-	background: none;
-	box-shadow: inset 0 0 0 1.5px var(--warn);
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--warn);
 }
 
 .agenda-h {
-	font-size: 14px;
-	font-weight: 620;
-	color: var(--muted);
-	margin: 0 0 9px 2px;
+  font-size: 14px;
+  font-weight: 620;
+  color: var(--muted);
+  margin: 0 0 9px 2px;
 }
 
 .ev {
-	width: 100%;
-	text-align: left;
-	min-height: 0;
-	display: flex;
-	gap: 12px;
-	padding: 12px 14px;
-	margin-bottom: 8px;
-	border-radius: var(--r);
-	background-color: var(--fill);
-	background-image: var(--sheen);
-	border: 1px solid var(--edge);
-	box-shadow: var(--rim);
+  width: 100%;
+  text-align: left;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border-radius: var(--r);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  border: 1px solid var(--edge);
+  box-shadow: var(--rim);
 }
 
 .ev-time {
-	flex: none;
-	width: 58px;
-	font-size: 12.5px;
-	font-weight: 600;
-	color: var(--accent);
-	font-variant-numeric: tabular-nums;
-	padding-top: 1px;
+  flex: none;
+  width: 58px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
 }
 .ev-body {
-	flex: 1;
-	min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 .ev-body strong {
-	font-size: 15px;
-	font-weight: 610;
+  font-size: 15px;
+  font-weight: 610;
 }
 
 /* The quoted span the extractor had to find in the source. */
 .evidence {
-	margin: 8px 0 6px;
-	padding: 7px 10px;
-	border-left: 2px solid var(--accent);
-	background: rgba(91, 157, 255, 0.06);
-	border-radius: 0 8px 8px 0;
-	font-size: 12.5px;
-	color: var(--muted);
-	font-style: italic;
-	overflow-wrap: anywhere;
+  margin: 8px 0 6px;
+  padding: 7px 10px;
+  border-left: 2px solid var(--accent);
+  background: rgba(91, 157, 255, 0.06);
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-style: italic;
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------- event sheet */
@@ -956,226 +968,228 @@ textarea {
  */
 
 .sheet-scrim {
-	position: fixed;
-	inset: 0;
-	z-index: 70;
-	background: rgba(0, 0, 0, 0.66);
-	border: none;
-	/* Matched to the sheet so the backdrop does not finish before the panel
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.66);
+  border: none;
+  /* Matched to the sheet so the backdrop does not finish before the panel
 	   has arrived. */
-	animation: fadein 0.34s var(--ease) both;
+  animation: fadein 0.34s var(--ease) both;
 }
 @keyframes fadein {
-	from {
-		opacity: 0;
-	}
+  from {
+    opacity: 0;
+  }
 }
 
 .sheet-scrim.closing {
-	animation: fadeout 0.26s var(--ease) both;
+  animation: fadeout 0.26s var(--ease) both;
 }
 @keyframes fadeout {
-	to {
-		opacity: 0;
-	}
+  to {
+    opacity: 0;
+  }
 }
 
 .sheet {
-	position: fixed;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	z-index: 71;
-	/* 82dvh, not 88: leaves a scrim strip that is actually big enough to hit
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 71;
+  /* 82dvh, not 88: leaves a scrim strip that is actually big enough to hit
 	   when someone taps outside to dismiss. */
-	max-height: 82dvh;
-	overflow-y: auto;
-	-webkit-overflow-scrolling: touch;
-	padding: 20px 17px calc(env(safe-area-inset-bottom, 0px) + 20px);
-	touch-action: pan-y;
-	border-radius: 22px 22px 0 0;
-	background-color: #101216;
-	background-image: var(--sheen);
-	border-top: 1px solid var(--edge-hi);
-	box-shadow: var(--rim), 0 -8px 30px rgba(0, 0, 0, 0.7);
-	/* transform only -- the compositor handles it without repainting */
-	animation: sheetup 0.34s var(--sheet-ease) both;
+  max-height: 82dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 17px calc(env(safe-area-inset-bottom, 0px) + 20px);
+  touch-action: pan-y;
+  border-radius: 22px 22px 0 0;
+  background-color: #101216;
+  background-image: var(--sheen);
+  border-top: 1px solid var(--edge-hi);
+  box-shadow:
+    var(--rim),
+    0 -8px 30px rgba(0, 0, 0, 0.7);
+  /* transform only -- the compositor handles it without repainting */
+  animation: sheetup 0.34s var(--sheet-ease) both;
 }
 
 @keyframes sheetup {
-	from {
-		transform: translate3d(0, 100%, 0);
-	}
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
 }
 
 /* Mirrors the entrance. Transform only, so it costs the compositor nothing.
    Exit is a touch quicker than entry: leaving should feel decisive, arriving
    should feel settled. */
 .sheet.closing {
-	animation: sheetdown 0.26s var(--sheet-exit) both;
+  animation: sheetdown 0.26s var(--sheet-exit) both;
 }
 
 @keyframes sheetdown {
-	to {
-		transform: translate3d(0, 100%, 0);
-	}
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
 }
 
 @media (min-width: 720px) {
-	.sheet {
-		left: 50%;
-		right: auto;
-		width: 560px;
-		transform: translateX(-50%);
-		bottom: 0;
-		border-radius: 22px 22px 0 0;
-	}
-	@keyframes sheetup {
-		from {
-			transform: translate3d(-50%, 100%, 0);
-		}
-	}
-	@keyframes sheetdown {
-		to {
-			transform: translate3d(-50%, 100%, 0);
-		}
-	}
+  .sheet {
+    left: 50%;
+    right: auto;
+    width: 560px;
+    transform: translateX(-50%);
+    bottom: 0;
+    border-radius: 22px 22px 0 0;
+  }
+  @keyframes sheetup {
+    from {
+      transform: translate3d(-50%, 100%, 0);
+    }
+  }
+  @keyframes sheetdown {
+    to {
+      transform: translate3d(-50%, 100%, 0);
+    }
+  }
 }
 
 .sheet h2 {
-	margin: 0;
-	font-size: 20px;
-	font-weight: 660;
-	letter-spacing: -0.02em;
-	line-height: 1.3;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
 }
 
 .sheet-when {
-	margin-top: 7px;
-	font-size: 14.5px;
-	color: var(--accent);
-	font-weight: 560;
+  margin-top: 7px;
+  font-size: 14.5px;
+  color: var(--accent);
+  font-weight: 560;
 }
 
 .sheet-h {
-	margin: 18px 0 7px;
-	font-size: 12px;
-	font-weight: 640;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: var(--dim);
+  margin: 18px 0 7px;
+  font-size: 12px;
+  font-weight: 640;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
 }
 
 .srcbtn {
-	width: 100%;
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	text-align: left;
-	padding: 11px 13px;
-	min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 11px 13px;
+  min-height: 0;
 }
 
 .srcbody {
-	margin: 9px 0 0;
-	padding: 12px;
-	max-height: 260px;
-	overflow: auto;
-	background: #0a0b0d;
-	border: 1px solid var(--edge);
-	border-radius: var(--r-sm);
-	font-size: 12.5px;
-	line-height: 1.55;
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-	color: var(--muted);
+  margin: 9px 0 0;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  background: #0a0b0d;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
 }
 
 .sheet-actions {
-	display: grid;
-	gap: 8px;
-	margin-top: 20px;
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
 }
 .sheet-actions > button {
-	width: 100%;
+  width: 100%;
 }
 
 .fld {
-	display: block;
-	margin-bottom: 11px;
+  display: block;
+  margin-bottom: 11px;
 }
 .fld > span {
-	display: block;
-	font-size: 12px;
-	font-weight: 600;
-	color: var(--dim);
-	margin-bottom: 5px;
-	text-transform: uppercase;
-	letter-spacing: 0.03em;
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 select {
-	font: inherit;
-	font-size: 16px;
-	width: 100%;
-	color: var(--text);
-	background: var(--fill-field);
-	border: 1px solid var(--edge);
-	border-radius: 12px;
-	padding: 13px 14px;
-	outline: none;
-	appearance: none;
+  font: inherit;
+  font-size: 16px;
+  width: 100%;
+  color: var(--text);
+  background: var(--fill-field);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 13px 14px;
+  outline: none;
+  appearance: none;
 }
 
 /* -------------------------------------------------------------- switches */
 
 .sw-row {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	padding: 12px 0;
-	border-top: 1px solid var(--edge);
-	margin-top: 10px;
-	font-size: 14.5px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--edge);
+  margin-top: 10px;
+  font-size: 14.5px;
 }
 .sw-row > div:first-child {
-	flex: 1;
-	min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 /* Native checkbox restyled rather than a div: it stays keyboard reachable and
    announces itself correctly to VoiceOver. */
 .sw {
-	appearance: none;
-	flex: none;
-	width: 50px;
-	height: 30px;
-	border-radius: 999px;
-	background: var(--fill-field);
-	border: 1px solid var(--edge);
-	position: relative;
-	transition: background-color 0.18s var(--ease);
-	padding: 0;
-	margin: 0;
+  appearance: none;
+  flex: none;
+  width: 50px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--fill-field);
+  border: 1px solid var(--edge);
+  position: relative;
+  transition: background-color 0.18s var(--ease);
+  padding: 0;
+  margin: 0;
 }
 .sw::after {
-	content: '';
-	position: absolute;
-	top: 3px;
-	left: 3px;
-	width: 22px;
-	height: 22px;
-	border-radius: 50%;
-	background: #cdd3dc;
-	transition: transform 0.2s var(--ease);
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #cdd3dc;
+  transition: transform 0.2s var(--ease);
 }
 .sw:checked {
-	background: #3f7fe0;
-	border-color: rgba(150, 195, 255, 0.4);
+  background: #3f7fe0;
+  border-color: rgba(150, 195, 255, 0.4);
 }
 .sw:checked::after {
-	transform: translateX(20px);
-	background: #fff;
+  transform: translateX(20px);
+  background: #fff;
 }
 
 /* ============================================================== desktop
@@ -1186,253 +1200,377 @@ select {
  */
 
 @media (min-width: 900px) {
-	main {
-		max-width: 1120px;
-		padding-left: 24px;
-		padding-right: 24px;
-	}
+  main {
+    max-width: 1120px;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
 
-	.topbar {
-		padding-left: 24px;
-		padding-right: 24px;
-		min-height: 62px;
-	}
-	.topbar h1 {
-		font-size: 24px;
-	}
+  .topbar {
+    padding-left: 24px;
+    padding-right: 24px;
+    min-height: 62px;
+  }
+  .topbar h1 {
+    font-size: 24px;
+  }
 
-	/* Notes and search become a card grid. A single column of 1100px-wide
+  /* Notes and search become a card grid. A single column of 1100px-wide
 	   cards is unreadable -- lines get far too long. */
-	.cards {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-		gap: 11px;
-		align-items: start;
-	}
-	.cards .card {
-		margin-bottom: 0;
-	}
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 11px;
+    align-items: start;
+  }
+  .cards .card {
+    margin-bottom: 0;
+  }
 
-	/* Calendar: month on the left, the day's agenda beside it, so choosing a
+  /* Calendar: month on the left, the day's agenda beside it, so choosing a
 	   day does not push the grid off screen. */
-	.calwrap {
-		display: grid;
-		grid-template-columns: minmax(380px, 1fr) minmax(340px, 420px);
-		gap: 24px;
-		align-items: start;
-	}
-	.calcol.agenda {
-		position: sticky;
-		top: 78px;
-		max-height: calc(100dvh - 110px);
-		overflow-y: auto;
-	}
-	.grid {
-		padding: 12px;
-		gap: 4px;
-	}
-	.day {
-		font-size: 14px;
-		border-radius: 11px;
-	}
-	.dot {
-		width: 5.5px;
-		height: 5.5px;
-	}
+  .calwrap {
+    display: grid;
+    grid-template-columns: minmax(380px, 1fr) minmax(340px, 420px);
+    gap: 24px;
+    align-items: start;
+  }
+  .calcol.agenda {
+    position: sticky;
+    top: 78px;
+    max-height: calc(100dvh - 110px);
+    overflow-y: auto;
+  }
+  .grid {
+    padding: 12px;
+    gap: 4px;
+  }
+  .day {
+    font-size: 14px;
+    border-radius: 11px;
+  }
+  .dot {
+    width: 5.5px;
+    height: 5.5px;
+  }
 
-	.seg {
-		width: max-content;
-		min-width: 380px;
-	}
+  .seg {
+    width: max-content;
+    min-width: 380px;
+  }
 
-	.sheet-actions {
-		grid-template-columns: 1fr 1fr;
-	}
-	.sheet-actions > button:first-child,
-	.sheet-actions > .sheet-close {
-		grid-column: 1 / -1;
-	}
+  .sheet-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sheet-actions > button:first-child,
+  .sheet-actions > .sheet-close {
+    grid-column: 1 / -1;
+  }
 }
 
 /* On a pointer device the sheet should be a centred dialog, not a panel
    hanging off the bottom edge -- there is no thumb to reach with. */
 @media (min-width: 900px) and (pointer: fine) {
-	.sheet {
-		top: 50%;
-		bottom: auto;
-		left: 50%;
-		right: auto;
-		width: 620px;
-		max-height: 82dvh;
-		border-radius: 20px;
-		border: 1px solid var(--edge-hi);
-		transform: translate(-50%, -50%);
-		animation: dialogin 0.26s var(--sheet-ease) both;
-		padding-bottom: 20px;
-	}
-	@keyframes dialogin {
-		from {
-			opacity: 0;
-			transform: translate(-50%, -47%) scale(0.97);
-		}
-	}
-	.sheet.closing {
-		animation: dialogout 0.2s var(--sheet-exit) both;
-	}
-	@keyframes dialogout {
-		to {
-			opacity: 0;
-			transform: translate(-50%, -47%) scale(0.97);
-		}
-	}
+  .sheet {
+    top: 50%;
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    width: 620px;
+    max-height: 82dvh;
+    border-radius: 20px;
+    border: 1px solid var(--edge-hi);
+    transform: translate(-50%, -50%);
+    animation: dialogin 0.26s var(--sheet-ease) both;
+    padding-bottom: 20px;
+  }
+  @keyframes dialogin {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -47%) scale(0.97);
+    }
+  }
+  .sheet.closing {
+    animation: dialogout 0.2s var(--sheet-exit) both;
+  }
+  @keyframes dialogout {
+    to {
+      opacity: 0;
+      transform: translate(-50%, -47%) scale(0.97);
+    }
+  }
 }
 
 @media (min-width: 1240px) {
-	main {
-		max-width: 1240px;
-	}
-	.calwrap {
-		grid-template-columns: minmax(460px, 1fr) 440px;
-	}
+  main {
+    max-width: 1240px;
+  }
+  .calwrap {
+    grid-template-columns: minmax(460px, 1fr) 440px;
+  }
 }
-
 
 /* Full-width and last in the stack, so it is the closest thing to the thumb
    when the sheet is open. */
 .sheet-close {
-	width: 100%;
-	margin-top: 2px;
-	color: var(--muted);
-	background: none;
-	background-image: none;
-	border-color: var(--edge);
-	box-shadow: none;
+  width: 100%;
+  margin-top: 2px;
+  color: var(--muted);
+  background: none;
+  background-image: none;
+  border-color: var(--edge);
+  box-shadow: none;
 }
 
 /* ------------------------------------------------------------------ mail */
 
 .mail-subject {
-	font-size: 21px;
-	line-height: 1.32;
-	letter-spacing: -0.02em;
-	margin: 0 0 14px;
+  font-size: 21px;
+  line-height: 1.32;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
 }
 
 .mail-from {
-	display: flex;
-	align-items: center;
-	gap: 11px;
-	padding-bottom: 14px;
-	border-bottom: 1px solid var(--edge);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--edge);
 }
 
 .avatar {
-	flex: none;
-	width: 38px;
-	height: 38px;
-	border-radius: 50%;
-	display: grid;
-	place-items: center;
-	font-size: 15px;
-	font-weight: 700;
-	color: var(--accent);
-	background: var(--accent-soft);
-	border: 1px solid rgba(91, 157, 255, 0.22);
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(91, 157, 255, 0.22);
 }
 
 .mail-who {
-	font-size: 14.5px;
-	font-weight: 600;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mail-meta {
-	font-size: 12px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attach {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 12px;
-	padding: 5px 11px 5px 8px;
-	border-radius: 999px;
-	border: 1px solid var(--edge);
-	background: rgba(255, 255, 255, 0.04);
-	color: var(--muted);
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 5px 11px 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .attach svg {
-	width: 13px;
-	height: 13px;
-	flex: none;
-	stroke: currentColor;
-	fill: none;
-	stroke-width: 2;
-	stroke-linecap: round;
-	stroke-linejoin: round;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Proportional, not monospace. These are circulars written in prose; a
    terminal font makes them look like log output and reads badly at phone
    width. */
 .mail-body {
-	margin-top: 16px;
-	font-size: 15px;
-	line-height: 1.62;
-	color: #cfd6e0;
-	overflow-wrap: anywhere;
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.62;
+  color: #cfd6e0;
+  overflow-wrap: anywhere;
 }
 .mail-body p {
-	margin: 0 0 13px;
+  margin: 0 0 13px;
 }
 .mail-body h4 {
-	margin: 20px 0 9px;
-	font-size: 12.5px;
-	font-weight: 680;
-	letter-spacing: 0.05em;
-	color: var(--text);
+  margin: 20px 0 9px;
+  font-size: 12.5px;
+  font-weight: 680;
+  letter-spacing: 0.05em;
+  color: var(--text);
 }
 .mail-body ul {
-	margin: 0 0 13px;
-	padding-left: 20px;
+  margin: 0 0 13px;
+  padding-left: 20px;
 }
 .mail-body li {
-	margin-bottom: 6px;
+  margin-bottom: 6px;
 }
 .mail-body a {
-	color: var(--accent);
-	text-decoration: none;
-	border-bottom: 1px solid rgba(91, 157, 255, 0.35);
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(91, 157, 255, 0.35);
 }
 .mail-body br {
-	line-height: 1.9;
+  line-height: 1.9;
 }
-
 
 /* The sheet animates in before its fetch resolves. Without a placeholder the
    panel slides up empty and then jumps to full height, which reads as no
    animation at all. */
 .sheet-skeleton {
-	padding: 4px 0 8px;
+  padding: 4px 0 8px;
 }
 .sk {
-	height: 13px;
-	border-radius: 7px;
-	background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
-	background-size: 220% 100%;
-	animation: shimmer 1.4s linear infinite;
-	margin-bottom: 11px;
+  height: 13px;
+  border-radius: 7px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.05)
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.4s linear infinite;
+  margin-bottom: 11px;
 }
 @keyframes shimmer {
-	to {
-		background-position: -220% 0;
-	}
+  to {
+    background-position: -220% 0;
+  }
+}
+
+/* Subjects ------------------------------------------------------------
+   A filter row of chips. On a phone it scrolls horizontally and bleeds to
+   both screen edges, so a half-visible chip at the margin is what tells you
+   the row continues -- a row that stops neatly at the gutter reads as the
+   whole list. With a mouse there is no such affordance and dragging is
+   awkward, so above 900px it wraps instead. Painted, never blurred. */
+.chips {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -15px 12px;
+  padding: 2px 15px 7px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  border: 1px solid var(--edge);
+  box-shadow: var(--rim);
+  transition:
+    color 0.16s var(--ease),
+    border-color 0.16s var(--ease),
+    background-color 0.16s var(--ease);
+}
+.chip .n {
+  font-size: 11px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.16s var(--ease);
+}
+.chip.on {
+  color: var(--accent);
+  background-color: var(--accent-soft);
+  background-image: none;
+  border-color: rgba(91, 157, 255, 0.42);
+  box-shadow: none;
+}
+.chip.on .n {
+  color: var(--accent);
+  opacity: 0.7;
+}
+.chip.empty {
+  opacity: 0.4;
+}
+.chip:active {
+  transform: scale(0.97);
+}
+
+/* Read-only subject tags on a card. */
+.subjs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+.subj {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--edge);
+  white-space: nowrap;
+}
+
+.chipbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 3px;
+}
+.chipbar .clear {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: none;
+  background-image: none;
+  border: 1px solid var(--edge);
+  box-shadow: none;
+}
+
+@media (min-width: 900px) {
+  .chips {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .chip:hover:not(.on) {
+    color: var(--text);
+    border-color: var(--edge-hi);
+  }
 }

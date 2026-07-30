@@ -418,6 +418,7 @@ type Message struct {
 	Snippet     string    `json:"snippet"`
 	BodyText    string    `json:"body_text,omitempty"`
 	Extracted   bool      `json:"extracted"`
+	Subjects    []string  `json:"subjects,omitempty"`
 	Attachments []byte    `json:"-"`
 }
 
@@ -465,9 +466,15 @@ func (s *Service) List(ctx context.Context, limit int) ([]Message, error) {
 		limit = 50
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, message_id, subject, from_name, from_addr, received_at, snippet,
-		        (extracted_at IS NOT NULL)
-		   FROM messages ORDER BY received_at DESC LIMIT $1`, limit)
+		`SELECT m.id, m.message_id, m.subject, m.from_name, m.from_addr, m.received_at,
+		        m.snippet, (m.extracted_at IS NOT NULL), coalesce(sj.subs, '{}')
+		   FROM messages m
+		   LEFT JOIN LATERAL (
+		     SELECT array_agg(ss.slug ORDER BY ss.confidence DESC) AS subs
+		       FROM source_subjects ss
+		      WHERE ss.source_type = 'message' AND ss.source_id = m.id
+		   ) sj ON true
+		  ORDER BY m.received_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +483,7 @@ func (s *Service) List(ctx context.Context, limit int) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.ID, &m.MessageID, &m.Subject, &m.FromName, &m.FromAddr,
-			&m.ReceivedAt, &m.Snippet, &m.Extracted); err != nil {
+			&m.ReceivedAt, &m.Snippet, &m.Extracted, &m.Subjects); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

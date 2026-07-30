@@ -36,6 +36,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/secretbox"
 	"github.com/NandishwarSingh/badal/internal/settings"
 	"github.com/NandishwarSingh/badal/internal/store"
+	"github.com/NandishwarSingh/badal/internal/subjects"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
 	"github.com/NandishwarSingh/badal/internal/vision"
@@ -132,6 +133,7 @@ func main() {
 	calSvc := calendar.New(st.Pool)
 	visSvc := vision.New(os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_VISION_MODEL"))
 	embSvc := embed.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_EMBED_MODEL"))
+	subjSvc := subjects.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_TAG_MODEL"))
 	jobSvc := jobs.New(st.Pool)
 	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
@@ -761,6 +763,49 @@ func main() {
 		}
 	}))
 
+	// ------------------------------------------------------------- subjects
+
+	mux.Handle("GET /v1/subjects", authed(func(w http.ResponseWriter, r *http.Request) {
+		list, err := subjSvc.List(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "subjects_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"subjects": list, "tagging": subjSvc.Tagging()})
+	}))
+
+	// Everything carrying a subject, newest first. This is what makes a chip
+	// worth tapping with nothing typed.
+	mux.Handle("GET /v1/subjects/browse", authed(func(w http.ResponseWriter, r *http.Request) {
+		var slugs, types []string
+		if v := r.URL.Query().Get("subjects"); v != "" {
+			slugs = strings.Split(v, ",")
+		}
+		if v := r.URL.Query().Get("types"); v != "" {
+			types = strings.Split(v, ",")
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		hits, err := subjSvc.Browse(r.Context(), slugs, types, limit)
+		if err != nil {
+			httpx.Err(w, 500, "browse_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"hits": hits, "count": len(hits)})
+	}))
+
+	// ?retag=1 clears the record of what has been looked at and does the lot
+	// again, which is what a prompt or taxonomy change needs.
+	mux.Handle("POST /v1/subjects/run", authed(func(w http.ResponseWriter, r *http.Request) {
+		switch err := subjSvc.Run(r.Context(), r.URL.Query().Get("retag") == "1"); {
+		case err == nil:
+			httpx.JSON(w, 202, map[string]any{"started": true})
+		case errors.Is(err, subjects.ErrBusy):
+			httpx.Err(w, 409, "tagging_busy", "tagging is already running")
+		default:
+			httpx.Err(w, 500, "tagging_failed", err.Error())
+		}
+	}))
+
 	// Unified search. mode=keyword keeps the Phase 2 behaviour; mode=semantic
 	// is vector nearest-neighbour across notes, mail and events.
 	mux.Handle("GET /v1/search/all", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -770,6 +815,10 @@ func main() {
 		var types []string
 		if tp := r.URL.Query().Get("types"); tp != "" {
 			types = strings.Split(tp, ",")
+		}
+		var subs []string
+		if sb := r.URL.Query().Get("subjects"); sb != "" {
+			subs = strings.Split(sb, ",")
 		}
 		if mode == "semantic" || mode == "hybrid" || mode == "" {
 			if !embSvc.Enabled() {
@@ -781,7 +830,7 @@ func main() {
 			switch mode {
 			case "semantic":
 				// Vector only, kept so the A2 improvement stays measurable.
-				hits, err = embSvc.Semantic(r.Context(), q, limit, types)
+				hits, err = embSvc.Semantic(r.Context(), q, limit, types, subs)
 			default:
 				// Rerank defaults ON, reversing the earlier call. It was turned
 				// off because it ranked three cultural festivals above the mess
@@ -792,7 +841,7 @@ func main() {
 				// the eval harness measures it well ahead of fusion alone on both
 				// query sets (MRR 0.944 and 0.969, against 0.833 and 0.797).
 				// ?rerank=0 opts out.
-				hits, err = embSvc.Retrieve(r.Context(), q, limit, types,
+				hits, err = embSvc.Retrieve(r.Context(), q, limit, types, subs,
 					r.URL.Query().Get("rerank") != "0")
 				mode = "hybrid"
 			}
@@ -1049,6 +1098,15 @@ func main() {
 					slog.Warn("embed after extract", "err", err)
 				} else if bf.Items > 0 {
 					slog.Info("embedded", "items", bf.Items, "chunks", bf.Chunks)
+				}
+			}
+			// Tag it too, detached: this is one model call per new item and the
+			// caller is already waiting on extraction and embedding. Untagged
+			// mail simply misses the filter row until the next pass.
+			if subjSvc.Enabled() {
+				if err := subjSvc.Run(context.WithoutCancel(r.Context()), false); err != nil &&
+					!errors.Is(err, subjects.ErrBusy) {
+					slog.Warn("tag after extract", "err", err)
 				}
 			}
 			kept := 0

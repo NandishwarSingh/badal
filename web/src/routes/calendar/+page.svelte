@@ -1,6 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
-	import { Cal, Mail, Jobs } from '$lib/api.js';
+	import { Cal, Mail, Jobs, Subjects } from '$lib/api.js';
 	import { mailSnippet } from '$lib/mailtext.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import EventSheet from '$lib/EventSheet.svelte';
@@ -9,6 +9,8 @@
 	import { replaceState } from '$app/navigation';
 
 	let view = $state('calendar'); // calendar | mail | review
+	// Slug -> label, so a card can show "Hostel & Mess" rather than "hostel".
+	let subjectLabels = $state({});
 	let loading = $state(true);
 	let err = $state('');
 
@@ -55,6 +57,8 @@
 			proposed = p.events || [];
 			messages = m.messages || [];
 			jobs = await Jobs.stats().catch(() => null);
+			const sj = await Subjects.list().catch(() => ({ subjects: [] }));
+			subjectLabels = Object.fromEntries((sj.subjects || []).map((x) => [x.slug, x.label]));
 		} catch (e) {
 			err = e.message || 'Could not load.';
 		} finally {
@@ -301,8 +305,11 @@
 				</div>
 				<div style="margin:3px 0 4px;font-size:14px">{m.subject || '(no subject)'}</div>
 				<p style="font-size:13px">{mailSnippet(m.snippet, 150)}</p>
-				{#if !m.extracted}
-					<span class="pill warn" style="margin-top:6px;display:inline-block">not scanned</span>
+				{#if m.subjects?.length || !m.extracted}
+					<div class="subjs">
+						{#each m.subjects ?? [] as s}<span class="subj">{subjectLabels[s] ?? s}</span>{/each}
+						{#if !m.extracted}<span class="pill warn">not scanned</span>{/if}
+					</div>
 				{/if}
 			</button>
 		{/each}
