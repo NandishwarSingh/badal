@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/config"
 	"github.com/NandishwarSingh/badal/internal/extract"
 	"github.com/NandishwarSingh/badal/internal/httpx"
+	"github.com/NandishwarSingh/badal/internal/jobs"
 	"github.com/NandishwarSingh/badal/internal/mail"
 	"github.com/NandishwarSingh/badal/internal/notes"
 	"github.com/NandishwarSingh/badal/internal/objects"
@@ -128,6 +130,8 @@ func main() {
 
 	calSvc := calendar.New(st.Pool)
 	visSvc := vision.New(os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_VISION_MODEL"))
+	jobSvc := jobs.New(st.Pool)
+	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
 		os.Getenv("BADAL_EXTRACT_MODEL"), env("BADAL_TZ", "Asia/Kolkata"))
 	if !exSvc.Enabled() {
@@ -719,6 +723,68 @@ func main() {
 		}))
 	}
 
+	// ---------------------------------------------------------------- jobs
+	mux.Handle("POST /v1/jobs/claim", authed(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Owner string   `json:"owner"`
+			Kinds []string `json:"kinds"`
+			N     int      `json:"n"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Owner == "" {
+			httpx.Err(w, 400, "bad_request", "owner and kinds are required")
+			return
+		}
+		list, err := jobSvc.Claim(r.Context(), req.Owner, req.Kinds, req.N)
+		if err != nil {
+			httpx.Err(w, 500, "claim_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"jobs": list})
+	}))
+
+	jobAction := func(fn func(context.Context, uuid.UUID, string, map[string]any) error) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			id, err := uuid.Parse(r.PathValue("id"))
+			if err != nil {
+				httpx.Err(w, 400, "bad_request", "invalid id")
+				return
+			}
+			var req map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			owner, _ := req["owner"].(string)
+			if err := fn(r.Context(), id, owner, req); err != nil {
+				// A lost lease is expected, not exceptional: the reaper may
+				// have requeued the job while the worker was busy.
+				httpx.Err(w, http.StatusConflict, "lease_lost", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"ok": true})
+		}
+	}
+
+	mux.Handle("POST /v1/jobs/{id}/heartbeat", authed(jobAction(
+		func(c context.Context, id uuid.UUID, owner string, _ map[string]any) error {
+			return jobSvc.Heartbeat(c, id, owner)
+		})))
+	mux.Handle("POST /v1/jobs/{id}/complete", authed(jobAction(
+		func(c context.Context, id uuid.UUID, owner string, req map[string]any) error {
+			return jobSvc.Complete(c, id, owner, req["result"])
+		})))
+	mux.Handle("POST /v1/jobs/{id}/fail", authed(jobAction(
+		func(c context.Context, id uuid.UUID, owner string, req map[string]any) error {
+			reason, _ := req["error"].(string)
+			return jobSvc.Fail(c, id, owner, reason)
+		})))
+
+	mux.Handle("GET /v1/jobs/stats", authed(func(w http.ResponseWriter, r *http.Request) {
+		st, err := jobSvc.Stats(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "stats_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, st)
+	}))
+
 	// ------------------------------------------------------------ calendar
 	mux.Handle("GET /v1/events", authed(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -842,17 +908,11 @@ func main() {
 				// the image never leaves the network; until a worker claims
 				// the job this goes straight to the cheap cloud model rather
 				// than leaving the poster unread.
-				if visSvc.Enabled() {
-					imgs, _ := mailSvc.Images(r.Context(), m.ID, 3, 12000)
-					for _, img := range imgs {
-						txt, err := visSvc.OCR(r.Context(), img.Data, img.MIME)
-						if err != nil {
-							slog.Warn("ocr", "msg", m.ID, "file", img.Filename, "err", err)
-							continue
-						}
-						if strings.TrimSpace(txt) != "" {
-							body += "\n\n[IMAGE " + img.Filename + "]\n" + txt
-						}
+				imgs, _ := mailSvc.Images(r.Context(), m.ID, 3, 12000)
+				for _, img := range imgs {
+					txt := ocrRouted(r.Context(), jobSvc, visSvc, m.ID.String(), img)
+					if strings.TrimSpace(txt) != "" {
+						body += "\n\n[IMAGE " + img.Filename + "]\n" + txt
 					}
 				}
 				res, err := exSvc.Extract(r.Context(), extract.Message{
@@ -1126,4 +1186,43 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// ocrRouted prefers the Mac worker and falls back to the cloud.
+//
+// The wait is short on purpose. If the Mac is awake it claims within a poll
+// interval; if it is shut there is no point holding an HTTP request open
+// hoping, so the cheap cloud model answers instead and the job is superseded.
+func ocrRouted(ctx context.Context, jq *jobs.Service, vis *vision.Service, msgID string, img mail.Image) string {
+	const workerWait = 12 * time.Second
+
+	key := msgID + ":" + img.Filename + ":" + strconv.Itoa(len(img.Data))
+	id, err := jq.Enqueue(ctx, "ocr", map[string]any{
+		"key":   key,
+		"mime":  img.MIME,
+		"image": base64.StdEncoding.EncodeToString(img.Data),
+	}, 3)
+	if err == nil {
+		if raw, ok := jq.Await(ctx, id, workerWait); ok {
+			var res struct {
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(raw, &res) == nil && strings.TrimSpace(res.Text) != "" {
+				slog.Info("ocr via worker", "file", img.Filename, "chars", len(res.Text))
+				return res.Text
+			}
+		}
+		jq.Supersede(ctx, id)
+	}
+
+	if !vis.Enabled() {
+		return ""
+	}
+	txt, verr := vis.OCR(ctx, img.Data, img.MIME)
+	if verr != nil {
+		slog.Warn("ocr fallback", "file", img.Filename, "err", verr)
+		return ""
+	}
+	slog.Info("ocr via cloud", "file", img.Filename, "model", vis.Model(), "chars", len(txt))
+	return txt
 }
