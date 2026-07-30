@@ -1,0 +1,21 @@
+{
+  "note": "Hard set. Every answer sits in the middle of a long document, and no query reuses the title's wording -- so a hit means the chunk actually matched, not that the title did. This is the set that can see a chunking change; queries.json is saturated at 100% R@5 and cannot.",
+  "queries": [
+    { "q": "which nobel prize winner worked on lithium ion batteries", "expect": ["(?i)traffic|road naming"] },
+    { "q": "which lane near tech tower is walking only now",          "expect": ["(?i)traffic|road naming"] },
+    { "q": "if I drive west where do I have to turn",                 "expect": ["(?i)traffic|road naming"] },
+    { "q": "internship that pays a commission on what I contribute",  "expect": ["(?i)solderlab"] },
+    { "q": "where can I learn STM32 and FreeRTOS",                    "expect": ["(?i)solderlab"] },
+    { "q": "who is looking for students who know KiCad",              "expect": ["(?i)solderlab"] },
+    { "q": "how many people do I need in my team for the drone one",  "expect": ["(?i)drone"] },
+    { "q": "do I get on duty leave for attending",                    "expect": ["(?i)drone"] },
+    { "q": "how long do I get to present to the mentors",             "expect": ["(?i)business plan"] },
+    { "q": "team funded by DST working with Schneider and L&T",       "expect": ["(?i)team lambda"] },
+    { "q": "work on thin film solar cell efficiency",                 "expect": ["(?i)open project"] },
+    { "q": "project where I need physics and chemistry background",   "expect": ["(?i)open project"] },
+    { "q": "what happens if I forget to carry my card",               "expect": ["(?i)identity card"] },
+    { "q": "can I be refused entry to the library",                   "expect": ["(?i)identity card"] },
+    { "q": "no membership fee and I get a certificate",               "expect": ["(?i)team lambda"] },
+    { "q": "robotics and renewable energy projects to join",          "expect": ["(?i)team lambda|solderlab"] }
+  ]
+}

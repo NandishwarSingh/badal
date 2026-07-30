@@ -86,29 +86,50 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 	}
 	q := vecString(vecs[0])
 
-	rows, err := s.pool.Query(ctx, `
-		WITH vec AS (
-		  SELECT DISTINCT ON (source_type, source_id)
-		         source_type, source_id, content, parent, occurred_at,
-		         1 - (embedding <=> $1::halfvec) AS sim,
-		         row_number() OVER (ORDER BY embedding <=> $1::halfvec) AS rnk
+	tx, err := s.beginSearch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Both arms bound their candidate set on the bare table before collapsing
+	// chunks to one row per source, so the vector arm can use HNSW and the
+	// lexical arm never ranks more rows than it is going to keep.
+	rows, err := tx.Query(ctx, `
+		WITH knn AS (
+		  SELECT source_type, source_id, content, parent, occurred_at,
+		         embedding <=> $1::halfvec AS dist
 		    FROM embeddings
 		   WHERE ($4::text[] IS NULL OR source_type = ANY($4))
-		   ORDER BY source_type, source_id, embedding <=> $1::halfvec
-		), vtop AS (
-		  SELECT *, row_number() OVER (ORDER BY sim DESC) AS vrank FROM vec LIMIT $3
-		), fts AS (
+		   ORDER BY embedding <=> $1::halfvec
+		   LIMIT $5
+		), vec AS (
 		  SELECT DISTINCT ON (source_type, source_id)
 		         source_type, source_id, content, parent, occurred_at,
+		         1 - dist AS sim
+		    FROM knn
+		   ORDER BY source_type, source_id, dist
+		), vtop AS (
+		  SELECT *, row_number() OVER (ORDER BY sim DESC) AS vrank
+		    FROM vec ORDER BY sim DESC LIMIT $3
+		), lex AS (
+		  SELECT source_type, source_id, content, parent, occurred_at,
 		         -- normalisation 32 divides by rank+1, so a long document does
 		         -- not win purely by containing more words.
 		         ts_rank_cd(content_tsv, to_tsquery('english', $2), 32) AS score
 		    FROM embeddings
 		   WHERE $2 <> '' AND content_tsv @@ to_tsquery('english', $2)
 		     AND ($4::text[] IS NULL OR source_type = ANY($4))
-		   ORDER BY source_type, source_id, ts_rank_cd(content_tsv, to_tsquery('english', $2), 32) DESC
+		   ORDER BY score DESC
+		   LIMIT $5
+		), fts AS (
+		  SELECT DISTINCT ON (source_type, source_id)
+		         source_type, source_id, content, parent, occurred_at, score
+		    FROM lex
+		   ORDER BY source_type, source_id, score DESC
 		), ftop AS (
-		  SELECT *, row_number() OVER (ORDER BY score DESC) AS frank FROM fts LIMIT $3
+		  SELECT *, row_number() OVER (ORDER BY score DESC) AS frank
+		    FROM fts ORDER BY score DESC LIMIT $3
 		), merged AS (
 		  SELECT coalesce(v.source_type, f.source_type) AS source_type,
 		         coalesce(v.source_id,   f.source_id)   AS source_id,
@@ -127,7 +148,7 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types []s
 		  LEFT JOIN notes    n  ON m.source_type='note'    AND n.id  = m.source_id
 		  LEFT JOIN messages ms ON m.source_type='message' AND ms.id = m.source_id
 		  LEFT JOIN events   ev ON m.source_type='event'   AND ev.id = m.source_id`,
-		q, orTSQuery(query), depth, nilIfEmpty(types))
+		q, orTSQuery(query), depth, nilIfEmpty(types), fanout(depth))
 	if err != nil {
 		return nil, err
 	}
@@ -190,10 +211,12 @@ func (s *Service) Rerank(ctx context.Context, query string, hits []Hit, top int)
 	}
 	docs := make([]string, len(hits))
 	for i, h := range hits {
-		// Feed the whole source, not the matched fragment. A cross-encoder
-		// reads query and document together; a window of mail headers tells it
-		// nothing, which is exactly how it ranked a cultural festival above the
-		// mess menu for "free food".
+		// Feed the section the chunk came from, not the matched fragment and
+		// not the whole source. A cross-encoder reads query and document
+		// together, so a bare fragment tells it nothing -- but a 9kB forwarded
+		// thread buries the relevant lines, which is exactly how this ranked a
+		// cultural festival above the mess menu for "free food". The section is
+		// the span that is both self-contained and actually about one thing.
 		body := h.Parent
 		if strings.TrimSpace(body) == "" {
 			body = h.Snippet

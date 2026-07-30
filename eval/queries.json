@@ -1,0 +1,23 @@
+{
+  "note": "Ground truth for retrieval. Each query lists regexes that a correct result title must match. Written from the real corpus, phrased the way a person would ask rather than echoing the source wording -- a query that quotes the document tests nothing.",
+  "queries": [
+    { "q": "traffic changes near technology tower",      "expect": ["(?i)campus traffic|road naming"] },
+    { "q": "which road became one way",                  "expect": ["(?i)campus traffic|road naming"] },
+    { "q": "how do I change my mess for next month",     "expect": ["(?i)mess change"] },
+    { "q": "hostel food plan",                           "expect": ["(?i)mess change"] },
+    { "q": "paid internship opportunity",                "expect": ["(?i)internship|solderlab|team lambda|arqgene"] },
+    { "q": "deadline to apply for the open project",     "expect": ["(?i)open project"] },
+    { "q": "publish a paper with my project",            "expect": ["(?i)open project|publish"] },
+    { "q": "chip design lecture",                        "expect": ["(?i)semiconductor|vlsi|semicon"] },
+    { "q": "hackathon about semiconductors",             "expect": ["(?i)semicon india hackathon"] },
+    { "q": "someone visiting from an american university","expect": ["(?i)carnegie mellon"] },
+    { "q": "talk by an industry executive",              "expect": ["(?i)tata electronic|gurumurthy|invited talk|industrial academic"] },
+    { "q": "wildlife conservation event",                "expect": ["(?i)tiger day|conservation"] },
+    { "q": "cultural fest performances",                 "expect": ["(?i)umang|navodaya|aarambh"] },
+    { "q": "starting a company support",                 "expect": ["(?i)entrepreneur|tbi|business plan|incubat"] },
+    { "q": "continuous assessment test schedule",        "expect": ["(?i)continuous assessment|cat *- *i"] },
+    { "q": "meeting my faculty advisor",                 "expect": ["(?i)proctor"] },
+    { "q": "id card rules for first years",              "expect": ["(?i)identity card"] },
+    { "q": "sap software training",                      "expect": ["(?i)sap orientation"] }
+  ]
+}

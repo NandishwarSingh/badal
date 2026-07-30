@@ -14,16 +14,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -31,12 +34,17 @@ const (
 	Dims       = 768
 	DefaultMod = "openai/text-embedding-3-small"
 
-	// Chunking. A1 splits on paragraphs with overlap; A3 replaces this with
-	// structure-aware splitting that understands headings and quote levels.
-	targetChars  = 1100
-	overlapChars = 180
-	minChars     = 60
-	maxChunks    = 40
+	// How deep the HNSW scan goes before chunks are collapsed to one row per
+	// source. Several chunks of the same document routinely rank together, so
+	// the neighbour list has to be a good deal longer than the result page or
+	// the tail of it is all duplicates of the top hit.
+	knnFanout = 12
+	minFanout = 200
+
+	// ef_search trades recall for latency inside the HNSW graph. The default of
+	// 40 is below the fan-out above, which would quietly cap how many distinct
+	// documents a search can ever see.
+	efSearch = 320
 )
 
 type Service struct {
@@ -45,6 +53,7 @@ type Service struct {
 	model    string
 	http     *http.Client
 	endpoint string
+	busy     atomic.Bool
 }
 
 func New(pool *pgxpool.Pool, apiKey, model string) *Service {
@@ -126,82 +135,6 @@ func (s *Service) Embed(ctx context.Context, texts []string) ([][]float32, error
 	return out, nil
 }
 
-// ----------------------------------------------------------------- chunking
-
-// Chunk splits text on paragraph boundaries, packing to roughly targetChars
-// with overlap so a fact spanning a boundary is not lost to both sides.
-func Chunk(text string) []string {
-	text = strings.TrimSpace(collapseBlank(text))
-	if text == "" {
-		return nil
-	}
-	if len(text) <= targetChars {
-		return []string{text}
-	}
-	paras := strings.Split(text, "\n\n")
-	var chunks []string
-	var cur strings.Builder
-	flush := func() {
-		if s := strings.TrimSpace(cur.String()); len(s) >= minChars {
-			chunks = append(chunks, s)
-		}
-		cur.Reset()
-	}
-	for _, p := range paras {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		// A single paragraph larger than the target is split on sentences.
-		if len(p) > targetChars {
-			flush()
-			for _, s := range splitLong(p) {
-				chunks = append(chunks, s)
-			}
-			continue
-		}
-		if cur.Len()+len(p)+2 > targetChars {
-			prev := cur.String()
-			flush()
-			// Carry the tail of the previous chunk forward.
-			if len(prev) > overlapChars {
-				cur.WriteString(strings.TrimSpace(prev[len(prev)-overlapChars:]))
-				cur.WriteString("\n\n")
-			}
-		}
-		cur.WriteString(p)
-		cur.WriteString("\n\n")
-	}
-	flush()
-	if len(chunks) > maxChunks {
-		chunks = chunks[:maxChunks]
-	}
-	return chunks
-}
-
-func splitLong(p string) []string {
-	var out []string
-	var cur strings.Builder
-	for _, sent := range strings.SplitAfter(p, ". ") {
-		if cur.Len()+len(sent) > targetChars && cur.Len() > 0 {
-			out = append(out, strings.TrimSpace(cur.String()))
-			cur.Reset()
-		}
-		cur.WriteString(sent)
-	}
-	if s := strings.TrimSpace(cur.String()); len(s) >= minChars {
-		out = append(out, s)
-	}
-	return out
-}
-
-func collapseBlank(s string) string {
-	for strings.Contains(s, "\n\n\n") {
-		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
-	}
-	return s
-}
-
 // --------------------------------------------------------------- indexing
 
 type Item struct {
@@ -216,20 +149,19 @@ type Item struct {
 // inside a transaction means a re-index can never leave a source half-covered
 // by stale and fresh chunks at once.
 func (s *Service) Index(ctx context.Context, it Item) (int, error) {
-	full := strings.TrimSpace(it.Title + "\n\n" + it.Body)
-	chunks := Chunk(full)
-	if len(chunks) == 0 {
+	pieces := Split(it.Title, it.Body)
+	if len(pieces) == 0 {
 		return 0, nil
 	}
-	// The title rides along with every chunk: a paragraph deep inside an email
-	// is far more findable when it carries what the email was about.
-	inputs := make([]string, len(chunks))
-	for i, c := range chunks {
-		if it.Title != "" {
-			inputs[i] = it.Title + "\n" + c
-		} else {
-			inputs[i] = c
-		}
+	// The title and the section heading ride along with every chunk: a bullet
+	// deep inside an email is far more findable when it carries what the email
+	// was about and which part of it this came from. Both are prepended to the
+	// embedding input only -- the stored content stays verbatim, so snippets
+	// show the passage rather than a synthesised header.
+	inputs := make([]string, len(pieces))
+	for i, p := range pieces {
+		inputs[i] = strings.TrimSpace(
+			strings.TrimSpace(it.Title+"\n"+p.Head) + "\n" + p.Text)
 	}
 	vecs, err := s.Embed(ctx, inputs)
 	if err != nil {
@@ -247,12 +179,13 @@ func (s *Service) Index(ctx context.Context, it Item) (int, error) {
 		it.SourceType, it.SourceID); err != nil {
 		return 0, err
 	}
-	for i, c := range chunks {
+	for i, p := range pieces {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO embeddings
 			   (source_type, source_id, chunk_index, content, parent, embedding, occurred_at, model)
 			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-			it.SourceType, it.SourceID, i, c, full, vecString(vecs[i]), it.OccurredAt, s.model); err != nil {
+			it.SourceType, it.SourceID, i, p.Text, p.Parent, vecString(vecs[i]),
+			it.OccurredAt, s.model); err != nil {
 			return 0, err
 		}
 	}
@@ -264,7 +197,7 @@ func (s *Service) Index(ctx context.Context, it Item) (int, error) {
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
 	}
-	return len(chunks), nil
+	return len(pieces), nil
 }
 
 // vecString formats a vector for pgvector. Building the literal by hand beats
@@ -321,6 +254,56 @@ func (s *Service) Pending(ctx context.Context, limit int) ([]Item, error) {
 	}
 	return out, rows.Err()
 }
+
+// ErrBusy means a rebuild is already running.
+var ErrBusy = errors.New("reindex already running")
+
+// Reindex drops every chunk and rebuilds from source.
+//
+// A chunking change is not a schema migration: the old rows stay perfectly
+// valid-looking, so nothing will ever notice them and the new splitter only
+// applies to mail that happens to arrive later. Adopting it means rebuilding
+// the lot.
+//
+// It runs detached from the request. A full rebuild is minutes of sequential
+// embedding calls on a one-core box, which outlives any sane HTTP timeout;
+// progress shows up in /v1/embeddings/stats.
+func (s *Service) Reindex(ctx context.Context) error {
+	if !s.Enabled() {
+		return fmt.Errorf("no api key")
+	}
+	if !s.busy.CompareAndSwap(false, true) {
+		return ErrBusy
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM embeddings`); err != nil {
+		s.busy.Store(false)
+		return err
+	}
+	go func() {
+		defer s.busy.Store(false)
+		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+		defer cancel()
+		total := 0
+		for {
+			res, err := s.Backfill(bg, 25)
+			if err != nil {
+				slog.Error("reindex", "err", err, "done", total)
+				return
+			}
+			// No progress means what is left cannot be embedded; looping on it
+			// would spin forever against the same failures.
+			if res.Items == 0 {
+				slog.Info("reindex complete", "chunks", total, "stuck", res.Failed)
+				return
+			}
+			total += res.Chunks
+		}
+	}()
+	return nil
+}
+
+// Rebuilding reports whether a rebuild is in flight.
+func (s *Service) Rebuilding() bool { return s.busy.Load() }
 
 type BackfillResult struct {
 	Items  int `json:"items"`
@@ -380,14 +363,28 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types [
 	}
 	q := vecString(vecs[0])
 
-	rows, err := s.pool.Query(ctx, `
-		WITH best AS (
-		  SELECT DISTINCT ON (e.source_type, e.source_id)
-		         e.source_type, e.source_id, e.content, e.occurred_at,
-		         1 - (e.embedding <=> $1::halfvec) AS score
-		    FROM embeddings e
-		   WHERE ($3::text[] IS NULL OR e.source_type = ANY($3))
-		   ORDER BY e.source_type, e.source_id, e.embedding <=> $1::halfvec
+	tx, err := s.beginSearch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// The ORDER BY / LIMIT sits on the bare table so HNSW can serve it. Folding
+	// DISTINCT ON into this level, as the first version did, forced a sort over
+	// every row in the table and the index went untouched on every search.
+	rows, err := tx.Query(ctx, `
+		WITH knn AS (
+		  SELECT source_type, source_id, content, occurred_at,
+		         embedding <=> $1::halfvec AS dist
+		    FROM embeddings
+		   WHERE ($3::text[] IS NULL OR source_type = ANY($3))
+		   ORDER BY embedding <=> $1::halfvec
+		   LIMIT $4
+		), best AS (
+		  SELECT DISTINCT ON (source_type, source_id)
+		         source_type, source_id, content, occurred_at, 1 - dist AS score
+		    FROM knn
+		   ORDER BY source_type, source_id, dist
 		)
 		SELECT b.source_type, b.source_id,
 		       coalesce(n.title, m.subject, v.title, '') AS title,
@@ -397,7 +394,7 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types [
 		  LEFT JOIN messages m ON b.source_type='message' AND m.id = b.source_id
 		  LEFT JOIN events   v ON b.source_type='event'   AND v.id = b.source_id
 		 ORDER BY b.score DESC
-		 LIMIT $2`, q, limit, nilIfEmpty(types))
+		 LIMIT $2`, q, limit, nilIfEmpty(types), fanout(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -440,6 +437,30 @@ func (s *Service) Stats(ctx context.Context) (map[string]any, error) {
 	out["model"] = s.model
 	out["dims"] = Dims
 	return out, nil
+}
+
+// fanout is how many chunk neighbours to pull before collapsing per source.
+func fanout(limit int) int {
+	n := limit * knnFanout
+	if n < minFanout {
+		n = minFanout
+	}
+	return n
+}
+
+// beginSearch opens a read-only transaction with ef_search raised. It has to be
+// a transaction: SET LOCAL is the only form that cannot leak the setting onto
+// the next borrower of a pooled connection.
+func (s *Service) beginSearch(ctx context.Context) (pgx.Tx, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `SET LOCAL hnsw.ef_search = `+strconv.Itoa(efSearch)); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	return tx, nil
 }
 
 func nilIfEmpty(v []string) any {

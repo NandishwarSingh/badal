@@ -734,6 +734,7 @@ func main() {
 		}
 		pend, _ := embSvc.Pending(r.Context(), 200)
 		st["pending"] = len(pend)
+		st["rebuilding"] = embSvc.Rebuilding()
 		httpx.JSON(w, 200, st)
 	}))
 
@@ -745,6 +746,19 @@ func main() {
 			return
 		}
 		httpx.JSON(w, 200, res)
+	}))
+
+	// Rebuild every chunk. Needed whenever the splitter changes, because old
+	// rows stay valid-looking and would otherwise never be replaced.
+	mux.Handle("POST /v1/embeddings/reindex", authed(func(w http.ResponseWriter, r *http.Request) {
+		switch err := embSvc.Reindex(r.Context()); {
+		case err == nil:
+			httpx.JSON(w, 202, map[string]any{"started": true})
+		case errors.Is(err, embed.ErrBusy):
+			httpx.Err(w, 409, "reindex_busy", "a rebuild is already running")
+		default:
+			httpx.Err(w, 500, "reindex_failed", err.Error())
+		}
 	}))
 
 	// Unified search. mode=keyword keeps the Phase 2 behaviour; mode=semantic
@@ -769,14 +783,17 @@ func main() {
 				// Vector only, kept so the A2 improvement stays measurable.
 				hits, err = embSvc.Semantic(r.Context(), q, limit, types)
 			default:
-				// Rerank is OPT-IN (?rerank=1), not default. Measured on this
-				// corpus it was neutral at best and actively wrong at worst --
-				// it ranked three cultural festivals above the mess circular
-				// for "free food on campus", and those emails contain no food
-				// reference at all. Kept behind a flag so A5's eval harness can
-				// re-test it against a larger corpus.
+				// Rerank defaults ON, reversing the earlier call. It was turned
+				// off because it ranked three cultural festivals above the mess
+				// circular for "free food on campus" -- but the cause was what it
+				// was being fed, not the model: every candidate arrived as the
+				// whole source document, up to 9kB of forwarded headers and
+				// ranking boilerplate. Now that a candidate is its own section,
+				// the eval harness measures it well ahead of fusion alone on both
+				// query sets (MRR 0.944 and 0.969, against 0.833 and 0.797).
+				// ?rerank=0 opts out.
 				hits, err = embSvc.Retrieve(r.Context(), q, limit, types,
-					r.URL.Query().Get("rerank") == "1")
+					r.URL.Query().Get("rerank") != "0")
 				mode = "hybrid"
 			}
 			if err != nil {

@@ -533,9 +533,50 @@ look at, so semantic search comes first and the plumbing is hardened behind it.
 |---|---|---|---|
 | A1 | Embeddings + semantic search toggle | Search "internship money" finds the Arqgene mail that never uses those words | M |
 | A2 | Hybrid retrieval, RRF, cross-encoder rerank | Same queries, better ordering; I show before/after rankings | M |
-| A3 | Structure-aware chunking + small-to-big | Long emails return the right paragraph, not the whole thread | M |
+| A3 | Structure-aware chunking + small-to-big | ✅ Long emails return the right paragraph, not the whole thread | M |
 | A4 | Subjects — auto-tagged taxonomy | Mail and events tagged by course/club; filter by subject | M |
-| A5 | Scale hardening: halfvec, incremental HNSW, partial indexes, eval harness | Numbers, not feel — recall and latency before/after | L |
+| A5 | Scale hardening + eval harness | ✅ Numbers, not feel — recall and latency before/after | L |
+
+#### What A3 + A5 measured
+
+The eval harness (`cmd/badal-eval`, ground truth in `eval/`) runs two query
+sets. The original set asks about things the title already says, and it was
+saturated at 100% recall@5 before any change — it cannot see a chunking
+difference. The hard set asks for facts buried mid-document in wording the
+document never uses, which is the case chunking actually governs.
+
+| | original R@1 / MRR | hard R@1 / MRR |
+|---|---|---|
+| before | 78% / 0.843 | 69% / 0.794 |
+| after, fusion only | 67% / 0.796 | 62% / 0.750 |
+| after, shipped default | **89% / 0.944** | **94% / 0.969** |
+
+Three findings worth keeping:
+
+**Small chunks alone are a regression.** Cutting 1100-character windows to ~420
+helps buried facts and hurts topical queries, because a short chunk matches a
+short query on very little evidence. The two effects roughly cancel. Small-to-big
+only pays once something re-scores candidates with the wider context.
+
+**The earlier verdict on reranking was wrong, and wrong for a findable reason.**
+It was turned off after ranking cultural festivals above the mess circular for
+"free food on campus". The model was not the problem — it was being handed the
+entire source document, up to 9kB of forwarded headers and ranking boilerplate.
+Now that a candidate arrives as its own section (parents: 791 chars average,
+2400 cap, down from whole threads), reranking is the largest lever in the
+pipeline and is on by default. `?rerank=0` opts out.
+
+**The HNSW index had never been used.** `DISTINCT ON (source_type, source_id)`
+with the distance in `ORDER BY` forces a sort over every row, so every search
+since A1 was a sequential scan; `EXPLAIN` showed `Seq Scan` → `Sort`. The
+neighbour search now runs on the bare table with its own `LIMIT` and chunks are
+collapsed per source outside it, which is a shape the index can serve. At 400
+rows the planner still picks a seq scan because it is genuinely cheaper — the
+point is that the ceiling is gone.
+
+Cost of the default: p50 rises from ~450ms to ~950ms, one extra network round
+trip to the reranker. Reranking failure is non-fatal and falls back to fused
+order.
 
 ### 5B · Conversation
 
