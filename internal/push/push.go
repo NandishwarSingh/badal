@@ -9,8 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -63,6 +65,19 @@ func New(ctx context.Context, pool *pgxpool.Pool, subject string) (*Service, err
 }
 
 func (s *Service) PublicKey() string { return s.pub }
+
+// vapidSubscriber normalises the VAPID `sub` claim.
+//
+// webpush-go prepends "mailto:" to anything that is not an https URL, so
+// passing an already-prefixed address yields sub="mailto:mailto:you@example
+// .com". Firefox tolerates that; Apple rejects the whole JWT with
+// {"reason":"BadJwtToken"} and no further explanation.
+func vapidSubscriber(subject string) string {
+	if strings.HasPrefix(subject, "https:") {
+		return subject
+	}
+	return strings.TrimPrefix(subject, "mailto:")
+}
 
 type Subscription struct {
 	Endpoint string `json:"endpoint"`
@@ -137,7 +152,7 @@ func (s *Service) Send(ctx context.Context, m Message) (int, error) {
 			Keys:     webpush.Keys{P256dh: r.p256dh, Auth: r.secret},
 		}
 		resp, err := webpush.SendNotificationWithContext(ctx, payload, sub, &webpush.Options{
-			Subscriber:      s.subject,
+			Subscriber:      vapidSubscriber(s.subject),
 			VAPIDPublicKey:  s.pub,
 			VAPIDPrivateKey: s.priv,
 			TTL:             86400,
@@ -148,20 +163,27 @@ func (s *Service) Send(ctx context.Context, m Message) (int, error) {
 			continue
 		}
 		code := resp.StatusCode
+		// Push services put the actual reason in the body. Discarding it turns
+		// a fixable 403 into a mystery.
+		var reason string
+		if code < 200 || code >= 300 {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			reason = strings.TrimSpace(string(b))
+		}
 		resp.Body.Close()
 		// 404/410 are the push service telling us this endpoint is dead for
 		// good. Retrying those forever is how a push queue rots.
 		if code == http.StatusNotFound || code == http.StatusGone {
 			_, _ = s.pool.Exec(ctx,
 				`UPDATE push_subscriptions SET failed_at=now() WHERE id=$1`, r.id)
-			slog.Info("push subscription expired", "endpoint", short(r.endpoint))
+			slog.Info("push subscription expired", "endpoint", short(r.endpoint), "reason", reason)
 			continue
 		}
 		if code >= 200 && code < 300 {
 			sent++
 			continue
 		}
-		slog.Warn("push rejected", "status", code, "endpoint", short(r.endpoint))
+		slog.Warn("push rejected", "status", code, "endpoint", short(r.endpoint), "reason", reason)
 	}
 	return sent, nil
 }
