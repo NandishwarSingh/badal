@@ -20,8 +20,10 @@ import (
 
 	"github.com/NandishwarSingh/badal/internal/auth"
 	"github.com/NandishwarSingh/badal/internal/blobs"
+	"github.com/NandishwarSingh/badal/internal/calendar"
 	"github.com/NandishwarSingh/badal/internal/chunks"
 	"github.com/NandishwarSingh/badal/internal/config"
+	"github.com/NandishwarSingh/badal/internal/extract"
 	"github.com/NandishwarSingh/badal/internal/httpx"
 	"github.com/NandishwarSingh/badal/internal/mail"
 	"github.com/NandishwarSingh/badal/internal/notes"
@@ -121,6 +123,13 @@ func main() {
 		slog.Info("mail ingestion enabled")
 	} else {
 		slog.Warn("BADAL_SECRET_KEY unset; mail ingestion disabled")
+	}
+
+	calSvc := calendar.New(st.Pool)
+	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
+		os.Getenv("BADAL_EXTRACT_MODEL"), env("BADAL_TZ", "Asia/Kolkata"))
+	if !exSvc.Enabled() {
+		slog.Warn("BADAL_OPENROUTER_KEY unset; extraction disabled")
 	}
 
 	pushSvc, err := push.New(ctx, st.Pool, cfg.PushSubject)
@@ -640,6 +649,139 @@ func main() {
 		}))
 	}
 
+	// ------------------------------------------------------------ calendar
+	mux.Handle("GET /v1/events", authed(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		from, to := monthWindow(q.Get("from"), q.Get("to"))
+		list, err := calSvc.Range(r.Context(), from, to, q.Get("proposed") != "0")
+		if err != nil {
+			httpx.Err(w, 500, "range_failed", err.Error())
+			return
+		}
+		counts, _ := calSvc.Counts(r.Context())
+		httpx.JSON(w, 200, map[string]any{
+			"events": list, "from": from, "to": to, "counts": counts})
+	}))
+
+	mux.Handle("GET /v1/events/proposed", authed(func(w http.ResponseWriter, r *http.Request) {
+		list, err := calSvc.Proposed(r.Context(), 200)
+		if err != nil {
+			httpx.Err(w, 500, "proposed_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"events": list, "count": len(list)})
+	}))
+
+	mux.Handle("POST /v1/events", authed(func(w http.ResponseWriter, r *http.Request) {
+		var e calendar.Event
+		if err := json.NewDecoder(r.Body).Decode(&e); err != nil || e.Title == "" {
+			httpx.Err(w, 400, "bad_request", "title and starts_at are required")
+			return
+		}
+		out, err := calSvc.Create(r.Context(), e)
+		if err != nil {
+			httpx.Err(w, 400, "create_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 201, out)
+	}))
+
+	mux.Handle("POST /v1/events/{id}/state", authed(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		var req struct {
+			State string `json:"state"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		out, err := calSvc.SetState(r.Context(), id, req.State)
+		if err != nil {
+			httpx.Err(w, 400, "state_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, out)
+	}))
+
+	mux.Handle("POST /v1/events/confirm-all", authed(func(w http.ResponseWriter, r *http.Request) {
+		n, err := calSvc.ConfirmAll(r.Context(), 0)
+		if err != nil {
+			httpx.Err(w, 500, "confirm_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"confirmed": n})
+	}))
+
+	mux.Handle("PATCH /v1/events/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		var p calendar.Patch
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		out, err := calSvc.Update(r.Context(), id, p)
+		if err != nil {
+			httpx.Err(w, 400, "update_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, out)
+	}))
+
+	mux.Handle("DELETE /v1/events/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		if err := calSvc.Delete(r.Context(), id); err != nil {
+			httpx.Err(w, 500, "delete_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"deleted": id})
+	}))
+
+	// Run extraction over whatever has not been processed at this version.
+	if mailSvc != nil && exSvc.Enabled() {
+		mux.Handle("POST /v1/mail/extract", authed(func(w http.ResponseWriter, r *http.Request) {
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			if limit <= 0 {
+				limit = 25
+			}
+			pending, err := mailSvc.Pending(r.Context(), extract.Version, limit)
+			if err != nil {
+				httpx.Err(w, 500, "pending_failed", err.Error())
+				return
+			}
+			auto := setSvc.Bool(r.Context(), "mail.auto_confirm", false)
+			minConf := setSvc.Float(r.Context(), "mail.auto_confirm_min", 0.85)
+
+			results := []extract.Result{}
+			for _, m := range pending {
+				res, err := exSvc.Extract(r.Context(), extract.Message{
+					ID: m.ID, Subject: m.Subject, FromName: m.FromName,
+					FromAddr: m.FromAddr, ReceivedAt: m.ReceivedAt, Body: m.BodyText,
+				}, auto, minConf)
+				errStr := ""
+				if err != nil {
+					errStr = err.Error()
+				}
+				_ = mailSvc.MarkExtracted(r.Context(), m.ID, extract.Version, errStr)
+				results = append(results, res)
+			}
+			kept := 0
+			for _, r := range results {
+				kept += r.Kept
+			}
+			httpx.JSON(w, 200, map[string]any{
+				"processed": len(results), "events": kept, "results": results})
+		}))
+	}
+
 	// --------------------------------------------------------------- notes
 	mux.Handle("GET /v1/notes", authed(func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -865,4 +1007,30 @@ func lastN(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// monthWindow parses the requested range, defaulting to the current month plus
+// a generous margin so the client can render adjacent weeks without a refetch.
+func monthWindow(fromS, toS string) (time.Time, time.Time) {
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -7)
+	to := from.AddDate(0, 2, 14)
+	if fromS != "" {
+		if t, err := time.Parse(time.RFC3339, fromS); err == nil {
+			from = t
+		}
+	}
+	if toS != "" {
+		if t, err := time.Parse(time.RFC3339, toS); err == nil {
+			to = t
+		}
+	}
+	return from, to
+}
+
+func env(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }
