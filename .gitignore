@@ -16,3 +16,8 @@ node_modules/
 .build/
 DerivedData/
 __pycache__/
+
+# web build artefacts
+web/node_modules/
+web/.svelte-kit/
+web/build/
