@@ -47,7 +47,7 @@
 		<div class="empty">No matches for “{q}”.</div>
 	{/if}
 	{#each hits as n, i (n.slug)}
-		<a class="card" href="/note/{n.slug}" style="animation-delay:{Math.min(i * 22, 160)}ms">
+		<a class="card" href="/note/{n.slug}">
 			<h3>{n.title}</h3>
 			{#if n.snippet}<p>{@html n.snippet}</p>{:else}<p>{(n.body || '').slice(0, 130)}</p>{/if}
 		</a>

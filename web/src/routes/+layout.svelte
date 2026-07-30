@@ -2,7 +2,6 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { onNavigate } from '$app/navigation';
 	import { isSignedIn } from '$lib/api.js';
 	import { authState } from '$lib/auth.js';
 	import { requestPersistence } from '$lib/store.js';
@@ -20,24 +19,7 @@
 		{ href: '/settings', label: 'You', d: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0' }
 	];
 
-	// Tab order, used only to decide which way a page transition should slide.
-	const tabIndex = (path) => tabs.findIndex((t) => t.href === path);
 
-	// Direction-aware page transition. Falls back to a plain swap where the
-	// View Transitions API is missing.
-	onNavigate((nav) => {
-		if (!document.startViewTransition) return;
-		const from = tabIndex(nav.from?.url.pathname);
-		const to = tabIndex(nav.to?.url.pathname);
-		document.documentElement.dataset.nav = from >= 0 && to >= 0 && to < from ? 'back' : 'fwd';
-		return new Promise((resolve) => {
-			document.startViewTransition(async () => {
-				resolve();
-				await nav.complete;
-				delete document.documentElement.dataset.nav;
-			});
-		});
-	});
 
 	onMount(async () => {
 		try {

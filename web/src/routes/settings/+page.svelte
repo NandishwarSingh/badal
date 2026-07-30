@@ -124,7 +124,7 @@
 <div class="topbar"><h1>You</h1></div>
 
 {#if !signedIn}
-	<div class="card" style="animation-delay:0ms">
+	<div class="card">
 		<h3>Sign in</h3>
 		<p style="-webkit-line-clamp:4;line-clamp:4">
 			{#if auth.has_passkeys}
@@ -179,7 +179,7 @@
 	{#if err}<div class="banner err" style="margin-top:12px">{err}</div>{/if}
 {:else}
 	{#if !installed}
-		<div class="card" style="animation-delay:0ms">
+		<div class="card">
 			<h3>Add to Home Screen</h3>
 			<p style="-webkit-line-clamp:5;line-clamp:5">
 				Share → Add to Home Screen. On iPhone this is required before notifications will work at
@@ -188,7 +188,7 @@
 		</div>
 	{/if}
 
-	<div class="card" style="animation-delay:40ms">
+	<div class="card">
 		<div class="row">
 			<h3>Notifications</h3>
 			<span class="spacer"></span>
@@ -208,7 +208,7 @@
 		</div>
 	</div>
 
-	<div class="card" style="animation-delay:80ms">
+	<div class="card">
 		<div class="row">
 			<h3>Passkeys</h3>
 			<span class="spacer"></span>
@@ -228,7 +228,7 @@
 		{/if}
 	</div>
 
-	<div class="card" style="animation-delay:120ms">
+	<div class="card">
 		<h3>Storage</h3>
 		<div class="row" style="margin-top:7px">
 			<span class="muted">{counts.notes} notes cached · {counts.queued} queued</span>

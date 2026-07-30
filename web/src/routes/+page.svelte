@@ -70,7 +70,6 @@
 			class="card"
 			class:pending={n._dirty}
 			href="/note/{n.slug}"
-			style="animation-delay:{Math.min(i * 22, 160)}ms"
 		>
 			<div class="row">
 				<h3>{n.title}</h3>

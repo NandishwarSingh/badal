@@ -1,53 +1,51 @@
-/* badal — pitch black + liquid glass. Mobile first.
+/* badal — pitch black glass, painted rather than composited.
  *
- * The look is built from three layers: a true-black base, translucent panels
- * that blur what is behind them, and a 1px specular edge that catches light
- * along the top. Nothing here uses a solid grey card -- depth comes from blur
- * and edge highlights, which is what makes glass read as glass.
+ * There is no backdrop-filter, no filter, and no blur anywhere in this file.
+ * Those are GPU compositing operations, and one backdrop-filter per card meant
+ * a full-screen blur pass for every row on screen.
+ *
+ * The glass is reconstructed from things a painter does in a single pass:
+ *   1. a translucent dark fill, so the ambient wash shows through
+ *   2. a top-down sheen gradient, because light gathers at the top of glass
+ *   3. a 1px specular rim, drawn as an inset shadow at zero blur
+ *   4. a hairline outer border
+ *
+ * Together those read as frosted while asking the compositor for nothing.
+ * Animation is limited to opacity and transform, and only on elements that
+ * were going to move anyway.
  */
 
 :root {
-	--black: #000000;
-	--glass-fill: linear-gradient(
-		145deg,
-		rgba(255, 255, 255, 0.075) 0%,
-		rgba(255, 255, 255, 0.032) 45%,
-		rgba(255, 255, 255, 0.014) 100%
-	);
-	--glass-fill-hi: linear-gradient(
-		145deg,
-		rgba(255, 255, 255, 0.13) 0%,
-		rgba(255, 255, 255, 0.055) 50%,
-		rgba(255, 255, 255, 0.022) 100%
-	);
-	--edge: rgba(255, 255, 255, 0.1);
-	--edge-hi: rgba(255, 255, 255, 0.22);
-	--blur: blur(24px) saturate(180%);
-	/* Flat translucent fills used everywhere backdrop-filter was too costly. */
-	--card-fill: rgba(24, 26, 32, 0.62);
-	--card-fill-hi: rgba(38, 41, 49, 0.78);
-	--field-fill: rgba(20, 22, 27, 0.7);
+	--bg: #000000;
 
-	--text: #f2f4f7;
-	--muted: #7f8794;
-	--dim: #5a616c;
+	/* Alpha is what sells glass once the blur is gone: the ambient wash
+	   underneath shows through the panel. */
+	--fill: rgba(22, 24, 29, 0.72);
+	--fill-hi: rgba(36, 39, 46, 0.86);
+	--fill-field: rgba(15, 16, 20, 0.8);
+	--sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 58%);
+
+	--edge: rgba(255, 255, 255, 0.085);
+	--edge-hi: rgba(255, 255, 255, 0.2);
+	/* Zero-blur inset highlight = the lit rim of a glass panel, free to paint. */
+	--rim: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+	--rim-hi: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+
+	--text: #f1f3f7;
+	--muted: #838b98;
+	--dim: #5b626d;
 
 	--accent: #5b9dff;
-	--accent-soft: rgba(91, 157, 255, 0.16);
+	--accent-soft: rgba(91, 157, 255, 0.14);
 	--warn: #ffc453;
 	--danger: #ff6b6b;
 	--ok: #4ade80;
 
-	--r-sm: 12px;
-	--r: 18px;
-	--r-lg: 26px;
+	--r-sm: 11px;
+	--r: 16px;
 
-	/* One spring for everything that moves, so the whole app feels like a
-	   single physical object rather than a pile of components. */
-	--spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-
-	--tabbar: 62px;
+	--tabbar: 60px;
 	--safe-b: env(safe-area-inset-bottom, 0px);
 	--safe-t: env(safe-area-inset-top, 0px);
 	color-scheme: dark;
@@ -63,7 +61,7 @@ body {
 	margin: 0;
 	padding: 0;
 	min-height: 100%;
-	background: var(--black);
+	background-color: var(--bg);
 	overscroll-behavior-y: none;
 }
 
@@ -78,49 +76,29 @@ body {
 		sans-serif;
 	-webkit-text-size-adjust: 100%;
 	-webkit-font-smoothing: antialiased;
+	/* Ambient wash: static, and soft purely from gradient stops. The previous
+	   version blurred a full-screen layer and animated it, which repainted the
+	   whole surface every frame. */
+	background-image:
+		radial-gradient(62% 48% at 16% 4%, rgba(64, 112, 246, 0.15), transparent 70%),
+		radial-gradient(58% 44% at 90% 18%, rgba(143, 78, 246, 0.11), transparent 70%),
+		radial-gradient(70% 52% at 50% 104%, rgba(0, 184, 184, 0.09), transparent 70%);
+	background-attachment: fixed;
 }
 
-/* Ambient colour behind the glass. Without something to refract, blurred
-   panels over pure black look like flat grey rectangles. */
-body::before {
-	content: '';
-	position: fixed;
-	inset: -25%;
-	z-index: -1;
-	pointer-events: none;
-	/* Soft stops instead of filter: blur() -- a blurred full-screen layer is
-	   repainted every frame, and animating it made tab changes stutter. */
-	background:
-		radial-gradient(60% 48% at 18% 6%, rgba(70, 120, 255, 0.13), transparent 72%),
-		radial-gradient(55% 46% at 88% 20%, rgba(150, 80, 255, 0.09), transparent 72%),
-		radial-gradient(65% 52% at 50% 106%, rgba(0, 190, 190, 0.08), transparent 72%);
-}
+/* ----------------------------------------------------------- primitives */
 
-/* ------------------------------------------------------------- surfaces */
-
-.glass {
-	position: relative;
-	background: var(--card-fill);
+.glass,
+.card,
+.tabbar,
+.toast {
+	background-color: var(--fill);
+	background-image: var(--sheen);
 	border: 1px solid var(--edge);
-	border-radius: var(--r);
-	box-shadow:
-		0 10px 34px rgba(0, 0, 0, 0.62),
-		inset 0 1px 0 rgba(255, 255, 255, 0.07);
-	overflow: hidden;
+	box-shadow: var(--rim);
 }
 
-/* The specular sheen along the top edge -- this is the detail that sells it. */
-.glass::after {
-	content: '';
-	position: absolute;
-	inset: 0 0 auto 0;
-	height: 42%;
-	pointer-events: none;
-	background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent);
-	opacity: 0.85;
-}
-
-/* -------------------------------------------------------------- layout */
+/* --------------------------------------------------------------- layout */
 
 .app {
 	min-height: 100dvh;
@@ -138,10 +116,10 @@ body::before {
 	gap: 10px;
 	padding: 11px 15px;
 	min-height: 54px;
-	background: rgba(0, 0, 0, 0.55);
-	backdrop-filter: blur(22px) saturate(180%);
-	-webkit-backdrop-filter: blur(22px) saturate(180%);
-	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	/* Opaque on purpose. A translucent sticky bar forces the browser to
+	   repaint everything behind it on every scroll frame. */
+	background: #08090b;
+	border-bottom: 1px solid var(--edge);
 }
 
 .topbar h1 {
@@ -157,30 +135,28 @@ body::before {
 
 main {
 	flex: 1;
-	padding: 13px 15px calc(var(--tabbar) + var(--safe-b) + 28px);
+	padding: 13px 15px calc(var(--tabbar) + var(--safe-b) + 26px);
 	max-width: 880px;
 	width: 100%;
 	margin: 0 auto;
 }
 
-/* ----------------------------------------------------------- tab bar */
+/* -------------------------------------------------------------- tab bar */
 
 .tabbar {
 	position: fixed;
-	left: 10px;
-	right: 10px;
-	bottom: calc(var(--safe-b) + 9px);
+	left: 9px;
+	right: 9px;
+	bottom: calc(var(--safe-b) + 8px);
 	z-index: 30;
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
-	border-radius: 22px;
-	background: var(--glass-fill);
-	backdrop-filter: var(--blur);
-	-webkit-backdrop-filter: var(--blur);
-	border: 1px solid var(--edge);
+	border-radius: 20px;
+	/* Near-opaque so it needs nothing from behind it. */
+	background-color: rgba(16, 18, 22, 0.96);
 	box-shadow:
-		0 12px 40px rgba(0, 0, 0, 0.72),
-		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+		var(--rim),
+		0 6px 18px rgba(0, 0, 0, 0.55);
 	overflow: hidden;
 }
 
@@ -196,38 +172,21 @@ main {
 	text-decoration: none;
 	font-size: 10.5px;
 	font-weight: 550;
-	letter-spacing: 0.01em;
-	transition:
-		color 0.3s var(--ease),
-		transform 0.35s var(--spring);
+	transition: color 0.16s var(--ease);
 }
 
 .tabbar a.active {
 	color: var(--text);
 }
-.tabbar a:active {
-	transform: scale(0.9);
-}
 
+/* Static. A pill that springs in on every tab change is a paint on the
+   busiest element in the app, at the exact moment it is busiest. */
 .tabbar a.active::before {
 	content: '';
 	position: absolute;
-	inset: 6px 10px;
-	border-radius: 15px;
-	background: rgba(255, 255, 255, 0.09);
-	border: 1px solid rgba(255, 255, 255, 0.09);
-	animation: tabpop 0.4s var(--spring);
-}
-
-@keyframes tabpop {
-	from {
-		transform: scale(0.75);
-		opacity: 0;
-	}
-	to {
-		transform: scale(1);
-		opacity: 1;
-	}
+	inset: 6px 9px;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.075);
 }
 
 .tabbar svg {
@@ -241,67 +200,35 @@ main {
 	position: relative;
 }
 
-/* --------------------------------------------------------------- cards */
+/* ----------------------------------------------------------------- cards */
 
 .card {
 	display: block;
 	position: relative;
 	padding: 14px 16px;
-	margin-bottom: 10px;
-	min-height: 58px;
+	margin-bottom: 9px;
+	min-height: 56px;
 	text-decoration: none;
 	color: inherit;
-	/* No backdrop-filter here: one per card meant a full-screen blur pass per
-	   row, which is what made scrolling and tab changes stutter. */
-	background: var(--card-fill);
-	border: 1px solid var(--edge);
 	border-radius: var(--r);
-	box-shadow:
-		0 8px 26px rgba(0, 0, 0, 0.5),
-		inset 0 1px 0 rgba(255, 255, 255, 0.06);
-	contain: content;
+	/* Skip painting rows that are off screen entirely. Biggest single win on
+	   a long list, and it costs one line. */
+	content-visibility: auto;
+	contain-intrinsic-size: auto 88px;
 	transition:
-		transform 0.32s var(--spring),
-		border-color 0.3s var(--ease),
-		background 0.3s var(--ease);
-	/* Entry animation for lists; stagger comes from an inline delay. */
-	animation: rise 0.3s var(--ease) both;
-}
-
-@keyframes rise {
-	from {
-		opacity: 0;
-		/* translate only -- animating scale on a bordered, shadowed box forces
-		   a repaint of both every frame. */
-		transform: translateY(8px);
-	}
-	to {
-		opacity: 1;
-		transform: none;
-	}
-}
-
-.card::after {
-	content: '';
-	position: absolute;
-	inset: 0 0 auto 0;
-	height: 40%;
-	pointer-events: none;
-	background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent);
+		background-color 0.16s var(--ease),
+		border-color 0.16s var(--ease);
 }
 
 .card:active {
-	transform: scale(0.975);
-	background: var(--card-fill-hi);
+	background-color: var(--fill-hi);
 	border-color: var(--edge-hi);
+	box-shadow: var(--rim-hi);
 }
 
-/* Not yet on the server. Signalled by a gentle fade rather than a colour
-   change -- the list should not shift hue while you are reading it. */
+/* Unsynced. Opacity only, which the compositor handles without repainting. */
 .card.pending {
-	animation:
-		rise 0.3s var(--ease) both,
-		breathe 2.2s var(--ease) infinite;
+	animation: breathe 2.2s var(--ease) infinite;
 }
 
 @keyframes breathe {
@@ -310,7 +237,7 @@ main {
 		opacity: 1;
 	}
 	50% {
-		opacity: 0.72;
+		opacity: 0.68;
 	}
 }
 
@@ -349,7 +276,7 @@ main {
 	background: var(--accent-soft);
 	color: var(--accent);
 	font-weight: 600;
-	border: 1px solid rgba(91, 157, 255, 0.2);
+	border: 1px solid rgba(91, 157, 255, 0.18);
 }
 
 .muted {
@@ -363,31 +290,31 @@ main {
 	border-radius: 999px;
 	border: 1px solid var(--edge);
 	color: var(--muted);
-	background: rgba(255, 255, 255, 0.04);
+	background: rgba(255, 255, 255, 0.035);
 	font-weight: 550;
 	white-space: nowrap;
 }
 .pill.warn {
 	color: var(--warn);
-	border-color: rgba(255, 196, 83, 0.34);
-	background: rgba(255, 196, 83, 0.1);
+	border-color: rgba(255, 196, 83, 0.3);
 }
 .pill.ok {
 	color: var(--ok);
-	border-color: rgba(74, 222, 128, 0.32);
-	background: rgba(74, 222, 128, 0.1);
+	border-color: rgba(74, 222, 128, 0.28);
 }
 
-/* ------------------------------------------------------------ controls */
+/* -------------------------------------------------------------- controls */
 
 button,
 .btn {
 	font: inherit;
 	font-weight: 600;
 	font-size: 15px;
-	border-radius: 13px;
+	border-radius: 12px;
 	border: 1px solid var(--edge);
-	background: var(--card-fill);
+	background-color: var(--fill);
+	background-image: var(--sheen);
+	box-shadow: var(--rim);
 	color: var(--text);
 	padding: 12px 16px;
 	min-height: 46px;
@@ -398,60 +325,57 @@ button,
 	justify-content: center;
 	gap: 8px;
 	transition:
-		transform 0.3s var(--spring),
-		background 0.25s var(--ease),
-		border-color 0.25s var(--ease),
-		opacity 0.2s;
+		background-color 0.14s var(--ease),
+		opacity 0.14s var(--ease);
 }
 
 button:active,
 .btn:active {
-	transform: scale(0.955);
-	background: var(--card-fill-hi);
+	background-color: var(--fill-hi);
 }
 
 button.primary,
 .btn.primary {
-	background: linear-gradient(145deg, rgba(91, 157, 255, 0.95), rgba(58, 120, 220, 0.95));
-	border-color: rgba(150, 195, 255, 0.42);
+	background-color: #3f7fe0;
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+	border-color: rgba(150, 195, 255, 0.34);
 	color: #fff;
-	box-shadow:
-		0 8px 24px rgba(50, 110, 220, 0.34),
-		inset 0 1px 0 rgba(255, 255, 255, 0.26);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+button.primary:active {
+	background-color: #356fc9;
 }
 
 button.ghost {
-	background: transparent;
+	background: none;
 	border-color: transparent;
-	backdrop-filter: none;
-	-webkit-backdrop-filter: none;
+	box-shadow: none;
 }
 button.danger {
 	color: var(--danger);
-	border-color: rgba(255, 107, 107, 0.34);
-	background: rgba(255, 107, 107, 0.08);
+	border-color: rgba(255, 107, 107, 0.3);
+	background-color: rgba(255, 107, 107, 0.07);
+	background-image: none;
+	box-shadow: none;
 }
 button:disabled {
-	opacity: 0.38;
+	opacity: 0.36;
 	pointer-events: none;
 }
 
 input,
 textarea {
 	font: inherit;
-	/* 16px minimum, or iOS zooms the viewport on focus */
+	/* 16px minimum, or iOS zooms the viewport on focus. */
 	font-size: 16px;
 	width: 100%;
 	color: var(--text);
-	background: var(--field-fill);
+	background: var(--fill-field);
 	border: 1px solid var(--edge);
-	border-radius: 13px;
+	border-radius: 12px;
 	padding: 13px 14px;
 	outline: none;
-	transition:
-		border-color 0.25s var(--ease),
-		background 0.25s var(--ease),
-		box-shadow 0.25s var(--ease);
+	transition: border-color 0.14s var(--ease);
 }
 input::placeholder,
 textarea::placeholder {
@@ -459,9 +383,7 @@ textarea::placeholder {
 }
 input:focus,
 textarea:focus {
-	border-color: rgba(91, 157, 255, 0.5);
-	background: rgba(255, 255, 255, 0.07);
-	box-shadow: 0 0 0 4px rgba(91, 157, 255, 0.11);
+	border-color: rgba(91, 157, 255, 0.55);
 }
 
 textarea {
@@ -473,42 +395,32 @@ textarea {
 
 .fab {
 	position: fixed;
-	right: 17px;
-	bottom: calc(var(--tabbar) + var(--safe-b) + 24px);
+	right: 16px;
+	bottom: calc(var(--tabbar) + var(--safe-b) + 22px);
 	z-index: 25;
-	width: 58px;
-	height: 58px;
+	width: 56px;
+	height: 56px;
 	border-radius: 50%;
 	padding: 0;
-	font-size: 27px;
+	font-size: 26px;
 	font-weight: 300;
 	color: #fff;
-	background: linear-gradient(145deg, rgba(91, 157, 255, 0.96), rgba(52, 112, 214, 0.96));
-	border: 1px solid rgba(160, 200, 255, 0.42);
+	background-color: #3f7fe0;
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+	border: 1px solid rgba(150, 195, 255, 0.34);
 	box-shadow:
-		0 12px 34px rgba(40, 100, 210, 0.44),
-		inset 0 1px 0 rgba(255, 255, 255, 0.3);
-	animation: fabin 0.5s var(--spring) both;
-}
-@keyframes fabin {
-	from {
-		transform: scale(0) rotate(-90deg);
-	}
-	to {
-		transform: none;
-	}
+		inset 0 1px 0 rgba(255, 255, 255, 0.24),
+		0 6px 16px rgba(0, 0, 0, 0.5);
 }
 .fab:active {
-	transform: scale(0.88);
+	background-color: #356fc9;
 }
 
-/* -------------------------------------------------------------- editor */
+/* ---------------------------------------------------------------- editor */
 
 .editor-title {
 	border: none;
-	background: transparent;
-	backdrop-filter: none;
-	-webkit-backdrop-filter: none;
+	background: none;
 	font-size: 23px;
 	font-weight: 700;
 	padding: 7px 0;
@@ -516,35 +428,20 @@ textarea {
 }
 .editor-title:focus {
 	border: none;
-	background: transparent;
-	box-shadow: none;
 }
 
 .editor-body {
 	border: none;
-	background: transparent;
-	backdrop-filter: none;
-	-webkit-backdrop-filter: none;
+	background: none;
 	padding: 0;
 	min-height: 54dvh;
 }
 .editor-body:focus {
 	border: none;
-	background: transparent;
-	box-shadow: none;
 }
 
 .rendered {
 	font-size: 16px;
-	animation: fade 0.35s var(--ease) both;
-}
-@keyframes fade {
-	from {
-		opacity: 0;
-	}
-	to {
-		opacity: 1;
-	}
 }
 .rendered h1 {
 	font-size: 22px;
@@ -557,14 +454,14 @@ textarea {
 	font-size: 17px;
 }
 .rendered pre {
-	background: rgba(255, 255, 255, 0.05);
+	background: rgba(255, 255, 255, 0.045);
 	border: 1px solid var(--edge);
 	padding: 12px;
 	border-radius: var(--r-sm);
 	overflow-x: auto;
 }
 .rendered code {
-	background: rgba(255, 255, 255, 0.07);
+	background: rgba(255, 255, 255, 0.06);
 	padding: 1.5px 6px;
 	border-radius: 6px;
 	font-size: 14px;
@@ -572,138 +469,69 @@ textarea {
 .rendered a.wiki {
 	color: var(--accent);
 	text-decoration: none;
-	border-bottom: 1px dashed rgba(91, 157, 255, 0.45);
+	border-bottom: 1px dashed rgba(91, 157, 255, 0.4);
 }
 .rendered ul {
 	padding-left: 21px;
 }
 
-/* -------------------------------------------------------------- banners */
+/* --------------------------------------------------------------- notices */
 
 .banner {
 	border-radius: var(--r-sm);
 	padding: 11px 14px;
-	margin-bottom: 12px;
+	margin-bottom: 11px;
 	font-size: 14px;
-	border: 1px solid;
-	animation: rise 0.4s var(--ease) both;
+	border: 1px solid var(--edge);
 }
 .banner.warn {
 	color: var(--warn);
-	border-color: rgba(255, 196, 83, 0.32);
-	background: rgba(255, 196, 83, 0.09);
+	border-color: rgba(255, 196, 83, 0.28);
+	background-color: rgba(255, 196, 83, 0.07);
 }
 .banner.err {
 	color: var(--danger);
-	border-color: rgba(255, 107, 107, 0.32);
-	background: rgba(255, 107, 107, 0.09);
+	border-color: rgba(255, 107, 107, 0.28);
+	background-color: rgba(255, 107, 107, 0.07);
 }
 .banner.info {
 	color: var(--accent);
-	border-color: rgba(91, 157, 255, 0.3);
-	background: rgba(91, 157, 255, 0.09);
+	border-color: rgba(91, 157, 255, 0.26);
+	background-color: rgba(91, 157, 255, 0.07);
 }
 
 .empty {
 	text-align: center;
 	color: var(--muted);
-	padding: 62px 22px;
-	animation: fade 0.5s var(--ease) both;
+	padding: 60px 22px;
 }
 
-/* Toast for optimistic confirmations. */
 .toast {
 	position: fixed;
 	left: 50%;
-	bottom: calc(var(--tabbar) + var(--safe-b) + 90px);
-	transform: translateX(-50%);
+	bottom: calc(var(--tabbar) + var(--safe-b) + 84px);
 	z-index: 60;
 	padding: 10px 17px;
 	border-radius: 999px;
 	font-size: 13.5px;
 	font-weight: 560;
-	background: var(--card-fill-hi);
-	border: 1px solid var(--edge-hi);
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-	animation: toastin 0.4s var(--spring) both;
+	background-color: rgba(30, 33, 39, 0.97);
+	background-image: none;
+	box-shadow:
+		var(--rim),
+		0 6px 18px rgba(0, 0, 0, 0.5);
 	pointer-events: none;
 	white-space: nowrap;
+	/* Centring via transform avoids a layout pass, and this is one small
+	   element rather than one per row. */
+	transform: translate3d(-50%, 0, 0);
+	animation: toastin 0.18s var(--ease) both;
 }
+
 @keyframes toastin {
 	from {
 		opacity: 0;
-		transform: translateX(-50%) translateY(14px) scale(0.9);
-	}
-	to {
-		opacity: 1;
-		transform: translateX(-50%) translateY(0) scale(1);
-	}
-}
-
-.spinner {
-	width: 15px;
-	height: 15px;
-	border-radius: 50%;
-	border: 2px solid rgba(255, 255, 255, 0.18);
-	border-top-color: var(--accent);
-	animation: spin 0.7s linear infinite;
-	display: inline-block;
-}
-@keyframes spin {
-	to {
-		transform: rotate(360deg);
-	}
-}
-
-/* ---------------------------------------------------------- desktop up */
-
-@media (min-width: 820px) {
-	.tabbar {
-		position: sticky;
-		top: 12px;
-		left: auto;
-		right: auto;
-		bottom: auto;
-		margin: 0 auto 16px;
-		width: max-content;
-		grid-template-columns: repeat(4, max-content);
-		border-radius: 18px;
-	}
-	.tabbar a {
-		flex-direction: row;
-		height: 42px;
-		padding: 0 20px;
-		font-size: 13.5px;
-		gap: 8px;
-	}
-	.tabbar a.active::before {
-		inset: 4px 6px;
-		border-radius: 13px;
-	}
-	main {
-		padding-bottom: 44px;
-	}
-	.fab {
-		bottom: 28px;
-	}
-	.card:hover {
-		background: var(--glass-fill-hi);
-		border-color: var(--edge-hi);
-		transform: translateY(-1px);
-	}
-}
-
-/* Honour the OS setting -- vestibular disorders are not an edge case. */
-@media (prefers-reduced-motion: reduce) {
-	*,
-	*::before,
-	*::after {
-		animation-duration: 0.01ms !important;
-		animation-iteration-count: 1 !important;
-		transition-duration: 0.01ms !important;
-	}
-	body::before {
-		animation: none;
+		transform: translate3d(-50%, 10px, 0);
 	}
 }
 
@@ -720,77 +548,71 @@ textarea {
 	padding: 5px 13px;
 	font-size: 13px;
 	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.14);
+	background: rgba(255, 255, 255, 0.12);
+	background-image: none;
 	border: 1px solid var(--edge-hi);
-	backdrop-filter: none;
-	-webkit-backdrop-filter: none;
+	box-shadow: none;
 	color: var(--accent);
 }
 
-
-/* ------------------------------------------------- tab page transitions */
-/*
- * Moving between tabs slides the pages horizontally. Direction comes from
- * data-nav on <html>, set before navigation, so going right along the tab bar
- * slides one way and going left slides the other. The tab bar keeps its own
- * transition name so it stays put while content moves under it.
- */
-
-@view-transition {
-	navigation: auto;
+.spinner {
+	width: 15px;
+	height: 15px;
+	border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.16);
+	border-top-color: var(--accent);
+	animation: spin 0.7s linear infinite;
+	display: inline-block;
 }
-
-::view-transition-group(root) {
-	animation-duration: 0.22s;
-	animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-html[data-nav='fwd']::view-transition-old(root) {
-	animation: slide-out-left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-html[data-nav='fwd']::view-transition-new(root) {
-	animation: slide-in-right 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-html[data-nav='back']::view-transition-old(root) {
-	animation: slide-out-right 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-html[data-nav='back']::view-transition-new(root) {
-	animation: slide-in-left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
-}
-
-@keyframes slide-out-left {
+@keyframes spin {
 	to {
-		transform: translateX(-6%);
-		opacity: 0;
-	}
-}
-@keyframes slide-in-right {
-	from {
-		transform: translateX(7%);
-		opacity: 0;
-	}
-}
-@keyframes slide-out-right {
-	to {
-		transform: translateX(6%);
-		opacity: 0;
-	}
-}
-@keyframes slide-in-left {
-	from {
-		transform: translateX(-7%);
-		opacity: 0;
+		transform: rotate(360deg);
 	}
 }
 
-.tabbar {
-	view-transition-name: tabbar;
+/* ------------------------------------------------------------ desktop up */
+
+@media (min-width: 820px) {
+	.tabbar {
+		position: sticky;
+		top: 12px;
+		left: auto;
+		right: auto;
+		bottom: auto;
+		margin: 0 auto 16px;
+		width: max-content;
+		grid-template-columns: repeat(4, max-content);
+		border-radius: 16px;
+	}
+	.tabbar a {
+		flex-direction: row;
+		height: 42px;
+		padding: 0 20px;
+		font-size: 13.5px;
+		gap: 8px;
+	}
+	.tabbar a.active::before {
+		inset: 4px 6px;
+		border-radius: 12px;
+	}
+	main {
+		padding-bottom: 40px;
+	}
+	.fab {
+		bottom: 26px;
+	}
+	.card:hover {
+		background-color: var(--fill-hi);
+		border-color: var(--edge-hi);
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {
-	::view-transition-group(root),
-	::view-transition-old(root),
-	::view-transition-new(root) {
-		animation: none !important;
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
 	}
 }
