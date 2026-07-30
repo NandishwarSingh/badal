@@ -1,6 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { Cal, Mail, Jobs } from '$lib/api.js';
+	import { mailSnippet } from '$lib/mailtext.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import EventSheet from '$lib/EventSheet.svelte';
 	import MessageSheet from '$lib/MessageSheet.svelte';
@@ -299,7 +300,7 @@
 					<span class="muted" style="font-size:12px">{fmtWhen(m.received_at)}</span>
 				</div>
 				<div style="margin:3px 0 4px;font-size:14px">{m.subject || '(no subject)'}</div>
-				<p style="font-size:13px">{m.snippet}</p>
+				<p style="font-size:13px">{mailSnippet(m.snippet, 150)}</p>
 				{#if !m.extracted}
 					<span class="pill warn" style="margin-top:6px;display:inline-block">not scanned</span>
 				{/if}

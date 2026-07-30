@@ -1,5 +1,6 @@
 <script>
 	import { Search } from '$lib/api.js';
+	import { mailSnippet } from '$lib/mailtext.js';
 	import { cache } from '$lib/store.js';
 	import { state as sync } from '$lib/sync.svelte.js';
 
@@ -96,7 +97,7 @@
 				{#if h.score}<span class="pill">{Math.round(h.score * 100)}%</span>{/if}
 			</div>
 			<h3 style="margin-top:7px">{h.title || '(untitled)'}</h3>
-			{#if h.snippet}<p>{@html h.snippet}</p>{/if}
+			{#if h.snippet}<p>{mailSnippet(h.snippet, 170)}</p>{/if}
 		</a>
 	{/each}
 </div>
