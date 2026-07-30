@@ -514,3 +514,78 @@ skip it and playback sync is silently wrong.
 
 `whisper-cli` is installed but **no model is cached**; `base.en` or `small.en`
 needs pulling on first run.
+
+---
+
+## 17. Delivery slices
+
+Working agreement: one slice at a time — build, test, ship, you verify, next.
+Every slice names what *you* check, because "the API returns 200" has already
+proved a poor proxy for "it works". Sizes: **S** under half a day, **M** about a
+day, **L** two to three days.
+
+### 5A · Retrieval
+
+Ordered so the first slice is visible. Chunking and indexing produce nothing to
+look at, so semantic search comes first and the plumbing is hardened behind it.
+
+| | Slice | You verify | |
+|---|---|---|---|
+| A1 | Embeddings + semantic search toggle | Search "internship money" finds the Arqgene mail that never uses those words | M |
+| A2 | Hybrid retrieval, RRF, cross-encoder rerank | Same queries, better ordering; I show before/after rankings | M |
+| A3 | Structure-aware chunking + small-to-big | Long emails return the right paragraph, not the whole thread | M |
+| A4 | Subjects — auto-tagged taxonomy | Mail and events tagged by course/club; filter by subject | M |
+| A5 | Scale hardening: halfvec, incremental HNSW, partial indexes, eval harness | Numbers, not feel — recall and latency before/after | L |
+
+### 5B · Conversation
+
+| | Slice | You verify | |
+|---|---|---|---|
+| B1 | Streaming chat with citations | Ask "when is the open project due" and get an answer with a tappable source | M |
+| B2 | Query rewriting + turn memory | "And who do I email about it" works as a follow-up | S |
+| B3 | Voice in (whisper-cli, chunked) | Speak a question, see it transcribed and answered | M |
+| B4 | Voice out (`say`) + barge-in | It talks back; speaking cuts it off mid-sentence | M |
+| B5 | Fish Audio as opt-in voice | Better timbre, and you decide if the added latency is worth it | L |
+
+### 5C · Capture
+
+| | Slice | You verify | |
+|---|---|---|---|
+| C1 | PWA recorder + upload | Record 30s on your phone, see it appear | M |
+| C2 | VAD + Whisper on the worker | A recording with long silences transcribes without invented text | L |
+| C3 | Transcript → structured note | Title, summary and action items, not a wall of text | M |
+| C4 | Image → structured note | Photograph a whiteboard, get usable markdown | M |
+| C5 | Reminders: schema + scheduled push | Set one for 5 minutes out, phone buzzes | M |
+| C6 | Reminder from a photo | Photograph a poster, get a reminder with the image attached | M |
+| C7 | Reminder by voice | "Remind me to submit the form Friday" | S |
+| C8 | Lecture mode | A 90-minute recording becomes sectioned notes with jumpable timestamps | L |
+
+### 5D · Graph
+
+| | Slice | You verify | |
+|---|---|---|---|
+| D1 | Auto-linking on save | Writing a note surfaces five genuinely related ones | M |
+| D2 | Entities as graph nodes | "Everything about Prof X" spans mail, events and notes | L |
+| D3 | Related-on-open | Opening any note shows what it sits near | S |
+| D4 | Smart collections over subjects | "Internship deadlines" stays populated as mail arrives | M |
+
+### 6 · Files
+
+| | Slice | You verify | |
+|---|---|---|---|
+| F1 | File browser: upload, list, download | Upload from your phone, download on the Mac | M |
+| F2 | Photos: thumbnails, grid, albums | A photo grid that loads fast on a phone | M |
+| F3 | WebDAV | Finder mounts badal as a drive | M |
+| F4 | Sharing: signed expiring links | Send someone a link that dies on schedule | M |
+| F5 | Organising: folders, tags, search over files | Find a file by name, tag or content | M |
+| F6 | Eviction to the Mac archive + cold restore | A 90-day-old file restores on demand | L |
+
+### Carried forward
+
+| | Item | Owner |
+|---|---|---|
+| R1 | Install the power daemon | **you** — one sudo command |
+| R2 | Decide the second blob copy: wire the Fedora laptop, or cloud archive | **you** |
+| R3 | Pull a Whisper model (`small.en`, ~500MB) | me, before C2 |
+| R4 | Revive badal-forge (ethernet) — optional, unlocks 300GB archive | **you** |
+| R5 | Tune the extraction prompt against wrong events in your calendar | needs your review |
