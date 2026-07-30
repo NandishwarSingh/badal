@@ -2,6 +2,8 @@
 // the home screen -- Safari silently refuses otherwise, which is why the UI
 // checks display-mode before offering it.
 
+import { api, ApiError } from './api.js';
+
 const urlB64ToUint8 = (s) => {
 	const pad = '='.repeat((4 - (s.length % 4)) % 4);
 	const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
@@ -32,7 +34,7 @@ export async function subscribePush() {
 	const perm = await Notification.requestPermission();
 	if (perm !== 'granted') throw new Error('Notification permission was denied.');
 
-	const { public_key } = await (await fetch('/v1/push/key', { credentials: 'include' })).json();
+	const { public_key } = await api('/v1/push/key');
 	const reg = await navigator.serviceWorker.ready;
 	let sub = await reg.pushManager.getSubscription();
 	if (!sub) {
@@ -41,19 +43,16 @@ export async function subscribePush() {
 			applicationServerKey: urlB64ToUint8(public_key)
 		});
 	}
-	const res = await fetch('/v1/push/subscribe', {
-		method: 'POST',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(sub.toJSON())
-	});
-	if (!res.ok) {
-		const j = await res.json().catch(() => null);
-		throw new Error(
-			res.status === 401
-				? 'Sign in first — the subscription is tied to your session.'
-				: `Server rejected the subscription (HTTP ${res.status}${j?.detail ? ': ' + j.detail : ''}).`
-		);
+	// Must go through api(): it sends the bearer token as well as the cookie.
+	// Raw fetch only carries the cookie, which silently fails for anyone
+	// signed in with a device token.
+	try {
+		await api('/v1/push/subscribe', { method: 'POST', body: sub.toJSON() });
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 401) {
+			throw new Error('Your session was not accepted. Sign in again on the You tab.');
+		}
+		throw new Error(`Server rejected the subscription (${e.message}).`);
 	}
 	return true;
 }
@@ -62,17 +61,10 @@ export async function unsubscribePush() {
 	const reg = await navigator.serviceWorker.ready;
 	const sub = await reg.pushManager.getSubscription();
 	if (!sub) return;
-	await fetch('/v1/push/unsubscribe', {
-		method: 'POST',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ endpoint: sub.endpoint })
-	}).catch(() => {});
+	await api('/v1/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {});
 	await sub.unsubscribe();
 }
 
 export async function sendTestPush() {
-	const res = await fetch('/v1/push/test', { method: 'POST', credentials: 'include' });
-	if (!res.ok) throw new Error('Test failed.');
-	return res.json();
+	return api('/v1/push/test', { method: 'POST' });
 }

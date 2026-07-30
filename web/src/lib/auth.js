@@ -114,7 +114,9 @@ export async function logout() {
 }
 
 export async function listCredentials() {
-	const res = await fetch('/v1/auth/credentials', { credentials: 'include' });
-	if (!res.ok) return [];
-	return (await res.json()).credentials || [];
+	// Via api() so a device-token session works here too, not just a passkey.
+	const { api } = await import('./api.js');
+	return api('/v1/auth/credentials')
+		.then((r) => r.credentials || [])
+		.catch(() => []);
 }
