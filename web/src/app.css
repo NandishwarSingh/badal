@@ -1,11 +1,15 @@
 /* badal — pitch black glass, painted rather than composited.
  *
+ * The page background is pure black with nothing behind the panels, so the
+ * glass reads entirely from the sheen gradient, the specular rim and the
+ * hairline border.
+ *
  * There is no backdrop-filter, no filter, and no blur anywhere in this file.
  * Those are GPU compositing operations, and one backdrop-filter per card meant
  * a full-screen blur pass for every row on screen.
  *
  * The glass is reconstructed from things a painter does in a single pass:
- *   1. a translucent dark fill, so the ambient wash shows through
+ *   1. a near-black opaque fill, a few points lighter than the page
  *   2. a top-down sheen gradient, because light gathers at the top of glass
  *   3. a 1px specular rim, drawn as an inset shadow at zero blur
  *   4. a hairline outer border
@@ -18,11 +22,11 @@
 :root {
 	--bg: #000000;
 
-	/* Alpha is what sells glass once the blur is gone: the ambient wash
-	   underneath shows through the panel. */
-	--fill: rgba(22, 24, 29, 0.72);
-	--fill-hi: rgba(36, 39, 46, 0.86);
-	--fill-field: rgba(15, 16, 20, 0.8);
+	/* Against pure black there is nothing to show through, so definition comes
+	   from the rim and border rather than from transparency. */
+	--fill: #14161a;
+	--fill-hi: #20232a;
+	--fill-field: #0d0e11;
 	--sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 58%);
 
 	--edge: rgba(255, 255, 255, 0.085);
@@ -76,14 +80,6 @@ body {
 		sans-serif;
 	-webkit-text-size-adjust: 100%;
 	-webkit-font-smoothing: antialiased;
-	/* Ambient wash: static, and soft purely from gradient stops. The previous
-	   version blurred a full-screen layer and animated it, which repainted the
-	   whole surface every frame. */
-	background-image:
-		radial-gradient(62% 48% at 16% 4%, rgba(64, 112, 246, 0.15), transparent 70%),
-		radial-gradient(58% 44% at 90% 18%, rgba(143, 78, 246, 0.11), transparent 70%),
-		radial-gradient(70% 52% at 50% 104%, rgba(0, 184, 184, 0.09), transparent 70%);
-	background-attachment: fixed;
 }
 
 /* ----------------------------------------------------------- primitives */
@@ -153,7 +149,7 @@ main {
 	grid-template-columns: repeat(4, 1fr);
 	border-radius: 20px;
 	/* Near-opaque so it needs nothing from behind it. */
-	background-color: rgba(16, 18, 22, 0.96);
+	background-color: #101216;
 	box-shadow:
 		var(--rim),
 		0 6px 18px rgba(0, 0, 0, 0.55);
@@ -515,7 +511,7 @@ textarea {
 	border-radius: 999px;
 	font-size: 13.5px;
 	font-weight: 560;
-	background-color: rgba(30, 33, 39, 0.97);
+	background-color: #1e2127;
 	background-image: none;
 	box-shadow:
 		var(--rim),
