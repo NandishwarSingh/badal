@@ -96,11 +96,18 @@
 	async function setState(e, state) {
 		busy = e.id;
 		try {
-			await Cal.setState(e.id, state);
-			proposed = proposed.filter((x) => x.id !== e.id);
-			if (state === 'rejected') events = events.filter((x) => x.id !== e.id);
-			else events = events.map((x) => (x.id === e.id ? { ...x, state } : x));
-			counts = { ...counts, proposed: Math.max(0, counts.proposed - 1) };
+			const out = await Cal.setState(e.id, state);
+			if (state === 'rejected') {
+				proposed = proposed.filter((x) => x.id !== e.id);
+				events = events.filter((x) => x.id !== e.id);
+			} else if (state === 'proposed') {
+				proposed = proposed.some((x) => x.id === e.id) ? proposed : [...proposed, out];
+				events = events.map((x) => (x.id === e.id ? out : x));
+			} else {
+				proposed = proposed.filter((x) => x.id !== e.id);
+				events = events.map((x) => (x.id === e.id ? out : x));
+			}
+			counts = { ...counts, proposed: proposed.length };
 			toast(state === 'confirmed' ? 'Added to calendar' : 'Dismissed');
 		} catch (x) {
 			err = x.message;
@@ -298,10 +305,19 @@
 		event={sheet}
 		onclose={() => (sheet = null)}
 		onchanged={(ev, state) => {
-			proposed = proposed.filter((x) => x.id !== ev.id);
 			if (state === 'rejected' || state === 'deleted') {
+				proposed = proposed.filter((x) => x.id !== ev.id);
 				events = events.filter((x) => x.id !== ev.id);
+			} else if (state === 'proposed') {
+				// Un-confirming must put it back in Review immediately. The old
+				// handler removed from `proposed` for every state, so the badge
+				// only caught up on the next refresh.
+				proposed = proposed.some((x) => x.id === ev.id)
+					? proposed.map((x) => (x.id === ev.id ? ev : x))
+					: [...proposed, ev].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+				events = events.map((x) => (x.id === ev.id ? ev : x));
 			} else {
+				proposed = proposed.filter((x) => x.id !== ev.id);
 				events = events.map((x) => (x.id === ev.id ? ev : x));
 			}
 			counts = { ...counts, proposed: proposed.length };

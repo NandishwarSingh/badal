@@ -965,6 +965,15 @@ textarea {
 	}
 }
 
+.sheet-scrim.closing {
+	animation: fadeout 0.22s var(--ease) both;
+}
+@keyframes fadeout {
+	to {
+		opacity: 0;
+	}
+}
+
 .sheet {
 	position: fixed;
 	left: 0;
@@ -985,12 +994,6 @@ textarea {
 	box-shadow: var(--rim), 0 -8px 30px rgba(0, 0, 0, 0.7);
 	/* transform only -- the compositor handles it without repainting */
 	animation: sheetup 0.24s var(--ease) both;
-	transition: transform 0.26s var(--ease);
-}
-
-/* No transition while a finger is down, or the sheet lags behind the drag. */
-.sheet.dragging {
-	transition: none;
 }
 
 /* Sticky so the close button and handle stay reachable however far the
@@ -1004,9 +1007,9 @@ textarea {
 	background: #101216;
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	min-height: 40px;
-	cursor: grab;
+	justify-content: flex-end;
+	min-height: 42px;
+	/* Reserves the row so the title never sits under the close button. */
 }
 
 .sheet-x {
@@ -1045,14 +1048,11 @@ textarea {
 			transform: translate3d(-50%, 100%, 0);
 		}
 	}
-}
-
-.sheet-grab {
-	width: 38px;
-	height: 4px;
-	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.24);
-	margin: 0 auto;
+	@keyframes sheetdown {
+		to {
+			transform: translate3d(-50%, 100%, 0);
+		}
+	}
 }
 
 .sheet h2 {
