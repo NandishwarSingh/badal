@@ -377,3 +377,140 @@ automation, multi-user. Each is its own project.
 | iOS PWAs cannot sync while closed | **Accepted.** Sync on open + Web Push |
 | Gmail tenant may block IMAP *and* third-party OAuth | **Unverified.** Check `myaccount.google.com/apppasswords` before Phase 3 |
 | 30 GB blob ceiling until eviction is live | Resolved by Phase 6 |
+
+---
+
+## 16. Phase 5 expanded — the knowledge layer
+
+Revised 2026-07-30. Everything needed is already installed: ffmpeg, whisper-cli,
+ollama (`qwen3.5:4b`), pgvector 0.8.5, SurrealDB HNSW, Apple Vision, and the
+job queue with a live Mac worker.
+
+### 16.0 Retrieval lives in pgvector, not SurrealDB
+
+Revision 2 put embeddings in SurrealDB. That is now wrong: the searchable corpus
+is notes **plus mail plus events**, and mail and events exist only in Postgres.
+Vectors in Surreal would mean projecting every email body into it, duplicating
+content and doubling the backup surface for no gain.
+
+| Store | Job |
+|---|---|
+| **pgvector** | One retrieval index over notes, mail, events, transcripts, OCR |
+| **SurrealDB** | Graph traversal — neighbours, 1-hop expansion, entity edges |
+
+pgvector also keeps the index on disk under Postgres' buffer management, rather
+than resident like Surreal's HNSW. That is what makes a large corpus survivable
+on 4 GB.
+
+### 16.1 What "best in class" actually means here
+
+In rough order of impact on answer quality:
+
+1. **Cross-encoder reranking.** Retrieve 50, rerank, keep 8. The single biggest
+   quality lever in RAG and the one most often skipped. `bge-reranker-v2-m3` on
+   the Mac worker.
+2. **Hybrid retrieval with RRF.** Dense misses exact tokens — course codes, room
+   numbers, names. BM25 misses paraphrase. Reciprocal Rank Fusion over both.
+3. **Query rewriting.** "What about that one" is not a retrieval query. Every
+   conversational turn is rewritten to a standalone query before search.
+4. **Small-to-big.** Embed small chunks for precision, then feed the *parent*
+   section to the model for context. Retrieval and generation want different
+   granularity.
+5. **Structure-aware chunking.** Split on headings, list boundaries and email
+   quote levels, with overlap — never fixed character counts.
+6. **Metadata pre-filter.** Date range, source type, subject. Cutting the
+   candidate set before ANN beats making ANN cleverer.
+
+### 16.2 Scaling to a very large corpus
+
+- **`halfvec(768)`** — 16-bit vectors halve storage and speed up distance
+  computation with no measurable recall loss at this scale.
+- **Binary quantization pre-pass** at very large scale: `bit(768)` Hamming
+  search to shortlist thousands, then rerank with full vectors. pgvector
+  supports both natively.
+- **HNSW built incrementally**, not as one blocking build. With 1 vCPU and
+  `maintenance_work_mem=128MB`, a single large build would stall the API.
+- **Partial indexes per source type**, so a note-only search never traverses
+  email vectors.
+
+> ⚠️ The honest ceiling: embedding and reranking run on the Mac, but *query
+> serving* is the VPS. One vCPU is what eventually limits concurrent search
+> latency at very large corpus sizes. This is the workload that would justify
+> the upgrade deferred in §1.
+
+### 16.3 Conversation, not Q&A
+
+Chat uses `deepseek/deepseek-v4-flash`, streamed. The target is sub-second to
+first token and sub-second to first audio, because anything slower stops feeling
+like talking.
+
+```
+mic → whisper-cli (Metal, chunked)      ~200ms
+    → query rewrite + hybrid search     ~150ms
+    → rerank on Mac                     ~120ms
+    → DeepSeek V4 Flash, streamed       first token ~400ms
+    → TTS, streamed sentence by sentence
+```
+
+**Voice out is two-tier.** macOS `say` is built in, 184 voices, effectively zero
+latency — that ships first. **Fish Audio** (OpenAudio S1) is the quality
+upgrade, but it needs PyTorch and weights in a separate Python 3.12 environment;
+torch has no 3.14 wheels yet. It becomes an opt-in mode, not the default,
+because a better voice that takes two seconds to start is worse than a plainer
+one that starts instantly.
+
+**Barge-in** is required: speaking must cut the TTS mid-sentence. Without it a
+voice assistant is a monologue you wait out.
+
+Conversation keeps turn history; retrieval does not. Each turn retrieves fresh
+against the rewritten query, so the model cannot drift onto stale context.
+
+### 16.4 Subjects
+
+A subject taxonomy derived from the corpus itself rather than hand-maintained:
+courses, clubs, recurring senders. Every note, mail and event gets auto-tagged.
+Subjects then drive smart collections, filters and the graph.
+
+### 16.5 Reminders
+
+Distinct from calendar events: a reminder is a *notification at a time*, not a
+block in a day.
+
+- **Photograph anything with a date** — a poster, a whiteboard, a form — and it
+  becomes a reminder with the source image attached.
+- **Speak one** — "remind me to submit the form on Friday" — through the same
+  audio path.
+- **Fires as Web Push** at a lead time you choose, using the infrastructure
+  already proven in Phase 3's digest.
+
+Reminders created from a picture or voice go to review first, same rule as
+calendar events, unless auto-confirm is on.
+
+### 16.6 Sub-phases
+
+| | Weeks | Scope |
+|---|---|---|
+| **5A · Retrieval** | 1–3 | pgvector schema, chunking, embeddings on the worker, hybrid + RRF, reranker, query rewriting, subjects |
+| **5B · Conversation** | 4–5 | Streaming chat, voice in, voice out with `say`, barge-in, citations, Fish Audio as opt-in |
+| **5C · Capture** | 6–8 | Audio→note with VAD, image→note, lecture mode, reminders from picture and voice |
+| **5D · Graph** | 9–10 | Auto-linking, entities as nodes, related-on-open, smart collections |
+
+Ten weeks rather than seven, because the expansion roughly doubles the scope.
+
+### 16.7 The audio pipeline, unchanged
+
+```
+record → ffmpeg 16kHz mono
+       → Silero VAD, drop non-speech ENTIRELY
+       → whisper-cli (Metal) on speech only
+       → filter: no_speech_prob > 0.6, repeating n-grams
+       → remap timestamps to the original recording
+       → structure → title, summary, actions, entities
+```
+
+Dropping silence is what stops Whisper hallucinating *"Thank you for watching"*
+into a lecture. Remapping matters because removing silence shifts every offset —
+skip it and playback sync is silently wrong.
+
+`whisper-cli` is installed but **no model is cached**; `base.en` or `small.en`
+needs pulling on first run.
