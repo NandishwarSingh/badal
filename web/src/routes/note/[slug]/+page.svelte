@@ -6,6 +6,7 @@
 	import { cache } from '$lib/store.js';
 	import { queuePut, queueDelete, state as sync } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
+	import ConflictCard from '$lib/ConflictCard.svelte';
 
 	let slug = $derived(page.params.slug);
 	let note = $state(null);
@@ -18,6 +19,7 @@
 	let backlinks = $state([]);
 	let outlinks = $state([]);
 	let notFound = $state(false);
+	let conflicts = $state([]);
 
 	let timer;
 
@@ -29,6 +31,7 @@
 			apply(res.note);
 			backlinks = res.backlinks || [];
 			outlinks = res.outlinks || [];
+			conflicts = res.conflicts || [];
 			await cache.put({ ...res.note, _dirty: false });
 		} catch (e) {
 			if (!local) notFound = true;
@@ -103,6 +106,20 @@
 		{editing ? 'Done' : 'Edit'}
 	</button>
 </div>
+
+{#each conflicts as c (c.id)}
+	<ConflictCard
+		conflict={c}
+		{note}
+		onresolved={(n) => {
+			note = n;
+			title = n.title;
+			body = n.body;
+			tagsText = (n.tags || []).join(', ');
+			conflicts = conflicts.filter((x) => x.id !== c.id);
+		}}
+	/>
+{/each}
 
 {#if notFound}
 	<div class="empty">

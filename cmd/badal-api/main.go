@@ -552,11 +552,12 @@ func main() {
 			Tags: req.Tags, Version: req.Version,
 		})
 		if errors.Is(err, notes.ErrConflict) {
-			// Nothing was lost: the incoming edit became a conflict copy and
-			// the client is told where to find it.
+			// Nothing was lost: the edit is parked on the note and the client
+			// is handed the current state plus the open conflicts to diff.
+			conf, _ := noteSvc.ConflictsFor(r.Context(), n.ID)
 			httpx.JSON(w, http.StatusConflict, map[string]any{
-				"error": "version_conflict", "conflict_copy": n,
-				"detail": "your edit was saved as a conflict copy; the note had changed since you loaded it",
+				"error": "version_conflict", "note": n, "conflicts": conf,
+				"detail": "the note changed since you loaded it; your edit is kept for review",
 			})
 			return
 		}
@@ -579,7 +580,9 @@ func main() {
 		}
 		back, _ := noteSvc.Backlinks(r.Context(), n.Slug)
 		out, _ := noteSvc.Outlinks(r.Context(), n.ID)
-		httpx.JSON(w, 200, map[string]any{"note": n, "backlinks": back, "outlinks": out})
+		conf, _ := noteSvc.ConflictsFor(r.Context(), n.ID)
+		httpx.JSON(w, 200, map[string]any{
+			"note": n, "backlinks": back, "outlinks": out, "conflicts": conf})
 	}))
 
 	mux.Handle("DELETE /v1/notes/{slug}", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -607,12 +610,47 @@ func main() {
 	}))
 
 	mux.Handle("GET /v1/conflicts", authed(func(w http.ResponseWriter, r *http.Request) {
-		list, err := noteSvc.Conflicts(r.Context())
+		list, err := noteSvc.OpenConflicts(r.Context())
 		if err != nil {
 			httpx.Err(w, 500, "conflicts_failed", err.Error())
 			return
 		}
 		httpx.JSON(w, 200, map[string]any{"conflicts": list, "count": len(list)})
+	}))
+
+	// Resolve: keep the server's text, take the rejected edit, or save a
+	// version the user assembled from both.
+	mux.Handle("POST /v1/conflicts/{id}/resolve", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid conflict id")
+			return
+		}
+		var req struct {
+			Keep  string   `json:"keep"` // current | incoming | custom
+			Title string   `json:"title"`
+			Body  string   `json:"body"`
+			Tags  []string `json:"tags"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		var custom *notes.PutInput
+		if req.Keep == "custom" {
+			custom = &notes.PutInput{Title: req.Title, Body: req.Body, Tags: req.Tags}
+		}
+		n, err := noteSvc.ResolveConflict(r.Context(), d.ID, id, req.Keep, custom)
+		if errors.Is(err, notes.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "conflict already resolved")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 400, "resolve_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"note": n, "resolved": req.Keep})
 	}))
 
 	mux.Handle("GET /v1/notes/{slug}/related", authed(func(w http.ResponseWriter, r *http.Request) {

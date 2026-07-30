@@ -612,3 +612,149 @@ textarea {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* ------------------------------------------------------------- conflicts */
+/*
+ * Unified diff, stacked. Side-by-side needs two columns of monospace text and
+ * horizontal scrolling, which on a phone makes comparing two versions of your
+ * own note harder than not having the feature.
+ *
+ * Colour follows the theme: the same near-black panels, tinted rather than
+ * the bright red/green of a desktop diff, which would be blinding on OLED.
+ */
+
+.conflict {
+	background-color: var(--fill);
+	background-image: var(--sheen);
+	border: 1px solid rgba(255, 196, 83, 0.28);
+	box-shadow: var(--rim);
+	border-radius: var(--r);
+	padding: 14px 15px;
+	margin-bottom: 14px;
+}
+
+.conflict-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 7px;
+	font-size: 15px;
+}
+
+.conflict-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--warn);
+	flex: none;
+}
+
+.diffstat {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 12px;
+	display: flex;
+	gap: 7px;
+}
+.diffstat .plus {
+	color: var(--ok);
+}
+.diffstat .minus {
+	color: var(--danger);
+}
+
+.diff {
+	border: 1px solid var(--edge);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+	background: #0a0b0d;
+	/* Wrapping beats horizontal scroll on a phone; a long line you cannot see
+	   the end of is not a diff you can act on. */
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 12.5px;
+	line-height: 1.5;
+}
+
+.dline {
+	display: flex;
+	gap: 8px;
+	padding: 2px 9px 2px 6px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.dline .sign {
+	flex: none;
+	width: 10px;
+	text-align: center;
+	opacity: 0.75;
+	user-select: none;
+}
+.dline .txt {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Tinted, not saturated. A full-strength green block on pure black glows. */
+.dline.add {
+	background: rgba(74, 222, 128, 0.11);
+	color: #b7f5cd;
+	box-shadow: inset 2px 0 0 rgba(74, 222, 128, 0.6);
+}
+.dline.del {
+	background: rgba(255, 107, 107, 0.1);
+	color: #ffc4c4;
+	box-shadow: inset 2px 0 0 rgba(255, 107, 107, 0.55);
+}
+.dline.same {
+	color: var(--muted);
+}
+.dline.gap {
+	justify-content: center;
+	color: var(--dim);
+	font-size: 11px;
+	padding: 5px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.legend {
+	display: flex;
+	gap: 14px;
+	margin-top: 8px;
+	font-size: 11.5px;
+	color: var(--muted);
+}
+.legend span {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+}
+.legend i.sw {
+	width: 9px;
+	height: 9px;
+	border-radius: 3px;
+	display: inline-block;
+}
+.legend i.sw.add {
+	background: rgba(74, 222, 128, 0.55);
+}
+.legend i.sw.del {
+	background: rgba(255, 107, 107, 0.5);
+}
+
+/* Full-width stacked buttons on a phone: three side by side would each be
+   under 44px of comfortable target. */
+.resolve {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 8px;
+	margin-top: 12px;
+}
+.resolve button {
+	width: 100%;
+}
+
+@media (min-width: 560px) {
+	.resolve {
+		grid-template-columns: repeat(3, 1fr);
+	}
+}

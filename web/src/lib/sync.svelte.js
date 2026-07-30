@@ -75,12 +75,18 @@ async function push() {
 			await outbox.remove(item.id);
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 409) {
-				// The server kept our edit as a conflict copy. Drop the queued
-				// write -- retrying would spawn another copy every attempt.
+				// The edit is now parked on the note as a conflict. Drop the
+				// queued write: retrying would record the same conflict again
+				// on every attempt.
 				await outbox.remove(item.id);
-				state.conflicts++;
 				const fresh = await Notes.get(item.slug).catch(() => null);
-				if (fresh?.note) await cache.put({ ...fresh.note, _dirty: false });
+				if (fresh?.note) {
+					await cache.put({
+						...fresh.note,
+						_dirty: false,
+						_conflicts: (fresh.conflicts || []).length
+					});
+				}
 				continue;
 			}
 			if (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 429) {
