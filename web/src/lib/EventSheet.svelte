@@ -4,6 +4,55 @@
 
 	let { event, onclose, onchanged } = $props();
 
+	let sheetEl;
+	let dragY = $state(0);
+	let dragging = $state(false);
+
+	// Close on the hardware/gesture back button. On Android that is the first
+	// thing anyone tries, and on iOS the back-swipe should not leave the page
+	// with a sheet still open over it.
+	$effect(() => {
+		history.pushState({ sheet: true }, '');
+		const onPop = () => onclose?.();
+		window.addEventListener('popstate', onPop);
+		return () => {
+			window.removeEventListener('popstate', onPop);
+			// If we are closing for any other reason, drop the entry we added.
+			if (history.state?.sheet) history.back();
+		};
+	});
+
+	// Drag to dismiss, bound to the header only. Binding it to the whole sheet
+	// would fight scrolling the source email inside it.
+	let startY = 0, startT = 0;
+
+	function dragStart(e) {
+		const p = e.touches ? e.touches[0] : e;
+		startY = p.clientY;
+		startT = performance.now();
+		dragging = true;
+	}
+	function dragMove(e) {
+		if (!dragging) return;
+		const p = e.touches ? e.touches[0] : e;
+		const dy = p.clientY - startY;
+		// Resist upward drag; a sheet does not go higher than open.
+		dragY = dy < 0 ? dy * 0.25 : dy;
+		if (dy > 0 && e.cancelable) e.preventDefault();
+	}
+	function dragEnd() {
+		if (!dragging) return;
+		dragging = false;
+		const v = dragY / Math.max(1, performance.now() - startT);
+		// Commit on distance or a flick, same as any native sheet.
+		if (dragY > 110 || (v > 0.5 && dragY > 40)) {
+			dragY = window.innerHeight;
+			setTimeout(() => onclose?.(), 160);
+			return;
+		}
+		dragY = 0;
+	}
+
 	let e = $state({ ...event });
 	let editing = $state(false);
 	let busy = $state('');
@@ -116,8 +165,26 @@
 	onkeydown={(k) => k.key === 'Escape' && onclose?.()}
 ></div>
 
-<div class="sheet" role="dialog" aria-modal="true">
-	<div class="sheet-grab"></div>
+<div
+	class="sheet"
+	class:dragging
+	role="dialog"
+	aria-modal="true"
+	bind:this={sheetEl}
+	style={dragY ? `transform:translate3d(0,${dragY}px,0)` : ''}
+>
+	<!-- Header is the drag handle. Everything below it scrolls normally. -->
+	<div
+		class="sheet-head"
+		role="presentation"
+		ontouchstart={dragStart}
+		ontouchmove={dragMove}
+		ontouchend={dragEnd}
+		ontouchcancel={dragEnd}
+	>
+		<div class="sheet-grab"></div>
+		<button class="sheet-x" onclick={onclose} aria-label="Close">✕</button>
+	</div>
 
 	{#if !editing}
 		<div class="row" style="align-items:flex-start">
@@ -183,6 +250,7 @@
 				<button style="flex:1" onclick={() => (editing = true)} disabled={!!busy}>Edit</button>
 				<button class="danger" onclick={remove} disabled={!!busy}>Delete</button>
 			</div>
+			<button class="ghost" onclick={onclose} style="margin-top:2px">Close</button>
 		</div>
 	{:else}
 		<h2 style="margin-bottom:12px">Edit event</h2>
