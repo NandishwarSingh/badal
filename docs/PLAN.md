@@ -537,6 +537,14 @@ look at, so semantic search comes first and the plumbing is hardened behind it.
 | A4 | Subjects — auto-tagged taxonomy | Mail and events tagged by course/club; filter by subject | M |
 | A5 | Scale hardening + eval harness | ✅ Numbers, not feel — recall and latency before/after | L |
 
+Two items from A5's original scope — **partial indexes** and **incremental HNSW
+build tuning** — are deferred into A4 rather than done. Both concern *filtered*
+vector search: pgvector fetches N neighbours and filters afterwards, so a narrow
+filter can come back near-empty while matches exist. At 400 chunks the planner
+still runs an exact sequential scan, so there is nothing to measure yet. Subject
+filtering is what makes narrow filters common, so they land with A4 and the eval
+harness decides whether they earn their keep.
+
 #### What A3 + A5 measured
 
 The eval harness (`cmd/badal-eval`, ground truth in `eval/`) runs two query
