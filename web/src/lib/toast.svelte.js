@@ -1,5 +1,5 @@
-// Toast queue. Supports an action, because a destructive swipe without undo
-// is a trap -- the gesture is easy to trigger by accident.
+// Toast queue. Supports an optional action, so a destructive operation can
+// offer undo instead of a confirm dialog.
 export const toasts = $state({ items: [] });
 let seq = 0;
 

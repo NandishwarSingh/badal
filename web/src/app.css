@@ -742,10 +742,10 @@ textarea {
 
 /* ------------------------------------------------- tab page transitions */
 /*
- * Swiping between tabs slides the pages horizontally. Direction comes from
- * data-nav on <html>, set before navigation so forward and back animate the
- * way the finger moved. The tab bar and toasts are excluded from the
- * transition so they stay put while the content moves under them.
+ * Moving between tabs slides the pages horizontally. Direction comes from
+ * data-nav on <html>, set before navigation, so going right along the tab bar
+ * slides one way and going left slides the other. The tab bar keeps its own
+ * transition name so it stays put while content moves under it.
  */
 
 @view-transition {
@@ -797,10 +797,6 @@ html[data-nav='back']::view-transition-new(root) {
 
 .tabbar {
 	view-transition-name: tabbar;
-}
-
-main {
-	will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
