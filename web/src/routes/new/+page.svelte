@@ -1,4 +1,5 @@
 <script>
+	import Editor from '$lib/Editor.svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -55,5 +56,4 @@
 <input class="editor-title" bind:value={title} placeholder="Title" autofocus={!shared}
 	onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), ta?.focus())} />
 <input style="margin:9px 0;font-size:14px" bind:value={tagsText} placeholder="tags, comma separated" />
-<textarea bind:this={ta} class="editor-body" bind:value={body}
-	placeholder="Markdown. Link with [[another note]]."></textarea>
+<Editor bind:this={ta} bind:value={body} slug="inbox" />

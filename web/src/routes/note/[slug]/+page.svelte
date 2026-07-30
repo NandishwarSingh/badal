@@ -2,7 +2,9 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Notes, renderMarkdown, slugify } from '$lib/api.js';
+	import { Notes } from '$lib/api.js';
+	import Editor from '$lib/Editor.svelte';
+	import Rendered from '$lib/Rendered.svelte';
 	import { cache } from '$lib/store.js';
 	import { queuePut, queueDelete, state as sync } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
@@ -20,6 +22,10 @@
 	let outlinks = $state([]);
 	let notFound = $state(false);
 	let conflicts = $state([]);
+	// Preview is side-by-side where there is room and a toggle where there is
+	// not. On a phone the keyboard already owns half the screen.
+	let preview = $state(false);
+	let wide = $state(false);
 
 	let timer;
 
@@ -47,7 +53,16 @@
 		}
 	}
 
-	onMount(load);
+	onMount(() => {
+		load();
+		// Side-by-side only where it fits; below that the preview replaces the
+		// editor rather than squeezing both into a phone width.
+		const mq = window.matchMedia('(min-width: 900px)');
+		wide = mq.matches;
+		const on = (e) => (wide = e.matches);
+		mq.addEventListener('change', on);
+		return () => mq.removeEventListener('change', on);
+	});
 	onDestroy(() => {
 		clearTimeout(timer);
 		if (dirty) void save();
@@ -89,12 +104,6 @@
 		goto('/');
 	}
 
-	function onRenderedClick(e) {
-		const a = e.target.closest('a.wiki');
-		if (!a) return;
-		e.preventDefault();
-		goto('/note/' + a.dataset.slug);
-	}
 </script>
 
 <div class="topbar">
@@ -102,6 +111,16 @@
 	<h1>{title || slug}</h1>
 	{#if saving}<span class="pill">saving…</span>
 	{:else if dirty}<span class="pill warn">unsaved</span>{/if}
+	{#if editing}
+		<button
+			class="ghost"
+			class:on={preview}
+			onclick={() => (preview = !preview)}
+			style="padding:6px 10px"
+			aria-pressed={preview}
+			title="Preview">◱</button
+		>
+	{/if}
 	<button class="ghost" onclick={() => (editing = !editing)} style="padding:6px 12px">
 		{editing ? 'Done' : 'Edit'}
 	</button>
@@ -136,12 +155,16 @@
 		oninput={touch}
 		placeholder="tags, comma separated"
 	/>
-	<textarea
-		class="editor-body"
-		bind:value={body}
-		oninput={touch}
-		placeholder="Write in markdown. Link with [[another note]]."
-	></textarea>
+	<div class="editsplit" class:split={wide && preview}>
+		<div class="editpane">
+			<Editor bind:value={body} {slug} oninput={touch} />
+		</div>
+		{#if preview}
+			<div class="previewpane">
+				<Rendered {body} />
+			</div>
+		{/if}
+	</div>
 	<div class="row" style="margin-top:14px">
 		<button onclick={save} disabled={!dirty}>Save now</button>
 		<span class="spacer"></span>
@@ -151,10 +174,7 @@
 	<div class="row" style="margin-bottom:10px">
 		{#each note?.tags || [] as t}<span class="tag">{t}</span>{/each}
 	</div>
-	<!-- renderMarkdown escapes before formatting, so note text cannot inject HTML -->
-	<div class="rendered" onclick={onRenderedClick} role="presentation">
-		{@html renderMarkdown(body)}
-	</div>
+	<Rendered {body} />
 
 	{#if outlinks.length}
 		<h3 style="margin-top:26px;font-size:14px" class="muted">Links to</h3>
