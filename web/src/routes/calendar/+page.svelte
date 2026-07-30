@@ -1,6 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
-	import { Cal, Mail } from '$lib/api.js';
+	import { Cal, Mail, Jobs } from '$lib/api.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import EventSheet from '$lib/EventSheet.svelte';
 
@@ -17,6 +17,7 @@
 	let selected = $state(startOfDay(new Date()));
 	let busy = $state('');
 	let sheet = $state(null);
+	let jobs = $state(null);
 
 	function startOfDay(d) {
 		const x = new Date(d);
@@ -48,6 +49,7 @@
 			]);
 			proposed = p.events || [];
 			messages = m.messages || [];
+			jobs = await Jobs.stats().catch(() => null);
 		} catch (e) {
 			err = e.message || 'Could not load.';
 		} finally {
@@ -172,6 +174,21 @@
 </div>
 
 {#if err}<div class="banner err">{err}</div>{/if}
+
+<!-- Surfacing the queue is the whole mitigation for a worker that is only
+     sometimes there: waiting is fine, silence is not. -->
+{#if jobs && (jobs.queued || jobs.leased)}
+	<div class="banner info">
+		{#if jobs.leased}
+			Reading {jobs.leased} image{jobs.leased > 1 ? 's' : ''} on your Mac…
+		{:else if jobs.online}
+			{jobs.queued} image{jobs.queued > 1 ? 's' : ''} queued — your Mac is picking them up.
+		{:else}
+			{jobs.queued} image{jobs.queued > 1 ? 's' : ''} waiting for your Mac. They will be read
+			when it wakes, or sent to the cloud if it stays asleep.
+		{/if}
+	</div>
+{/if}
 
 {#if loading}
 	<div class="empty">Loading…</div>

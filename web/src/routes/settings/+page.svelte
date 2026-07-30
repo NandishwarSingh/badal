@@ -9,7 +9,7 @@
 	} from '$lib/auth.js';
 	import { pushState, subscribePush, unsubscribePush, sendTestPush, isInstalled } from '$lib/push.js';
 	import { toast } from '$lib/toast.svelte.js';
-	import { Settings, Mail } from '$lib/api.js';
+	import { Settings, Mail, Jobs } from '$lib/api.js';
 
 	let auth = $state({ has_passkeys: false, signed_in: false });
 	let tokenSignedIn = $state(false);
@@ -29,6 +29,7 @@
 	let diag = $state(null);
 	let cfg = $state(null);
 	let mailAccts = $state([]);
+	let jobs = $state(null);
 
 	const signedIn = $derived(auth.signed_in || tokenSignedIn);
 
@@ -49,6 +50,7 @@
 			push = await pushState().catch(() => push);
 			cfg = await Settings.get().catch(() => null);
 			mailAccts = await Mail.accounts().then((r) => r.accounts || []).catch(() => []);
+			jobs = await Jobs.stats().catch(() => null);
 		}
 	}
 
@@ -104,6 +106,14 @@
 				(e.status === 401 ? ' — token not accepted. Check for a missing character when pasting.' :
 				 e.status ? ` — ${e.message}` : ' — is the server reachable?');
 		} finally { busy = ''; }
+	}
+
+	function ago(iso) {
+		const m = (Date.now() - new Date(iso)) / 60000;
+		if (m < 1) return 'just now';
+		if (m < 60) return `${Math.floor(m)}m ago`;
+		if (m < 1440) return `${Math.floor(m / 60)}h ago`;
+		return `${Math.floor(m / 1440)}d ago`;
 	}
 
 	async function setCfg(key, value) {

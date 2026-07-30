@@ -71,6 +71,13 @@ func (s *Service) Claim(ctx context.Context, owner string, kinds []string, n int
 	if len(kinds) == 0 {
 		return nil, nil
 	}
+	// Record presence on every poll, not just successful claims. An idle
+	// worker must be distinguishable from an absent one.
+	_, _ = s.pool.Exec(ctx,
+		`INSERT INTO workers (owner, kinds) VALUES ($1,$2)
+		 ON CONFLICT (owner) DO UPDATE
+		   SET last_seen=now(), kinds=EXCLUDED.kinds, claims=workers.claims+1`,
+		owner, kinds)
 	rows, err := s.pool.Query(ctx,
 		`UPDATE jobs SET
 		   state = 'leased',
@@ -228,13 +235,21 @@ func (s *Service) RunReaper(ctx context.Context) {
 	}
 }
 
+type Worker struct {
+	Owner    string    `json:"owner"`
+	LastSeen time.Time `json:"last_seen"`
+	Online   bool      `json:"online"`
+}
+
 type Stats struct {
-	Queued    int        `json:"queued"`
-	Leased    int        `json:"leased"`
-	Done      int        `json:"done"`
-	Abandoned int        `json:"abandoned"`
-	Workers   []string   `json:"workers"`
-	LastSeen  *time.Time `json:"worker_last_seen,omitempty"`
+	Queued    int      `json:"queued"`
+	Leased    int      `json:"leased"`
+	Done      int      `json:"done"`
+	Abandoned int      `json:"abandoned"`
+	Workers   []Worker `json:"workers"`
+	// True when any worker has polled recently. This is what the UI uses to
+	// decide between "processing" and "waiting for your Mac".
+	Online bool `json:"online"`
 }
 
 // Stats powers the "waiting for your Mac" state in the UI. Showing the queue
@@ -267,20 +282,24 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) {
 	}
 	rows.Close()
 
+	st.Workers = []Worker{}
+	// Three poll intervals of grace before a worker is called offline, so a
+	// single missed tick does not flip the UI to "asleep".
 	wr, err := s.pool.Query(ctx,
-		`SELECT DISTINCT lease_owner FROM jobs
-		  WHERE lease_owner IS NOT NULL AND started_at > now() - interval '1 hour'`)
+		`SELECT owner, last_seen, last_seen > now() - interval '20 seconds'
+		   FROM workers ORDER BY last_seen DESC`)
 	if err == nil {
 		for wr.Next() {
-			var w string
-			if wr.Scan(&w) == nil {
+			var w Worker
+			if wr.Scan(&w.Owner, &w.LastSeen, &w.Online) == nil {
 				st.Workers = append(st.Workers, w)
+				if w.Online {
+					st.Online = true
+				}
 			}
 		}
 		wr.Close()
 	}
-	_ = s.pool.QueryRow(ctx,
-		`SELECT max(started_at) FROM jobs WHERE lease_owner IS NOT NULL`).Scan(&st.LastSeen)
 	return st, nil
 }
 

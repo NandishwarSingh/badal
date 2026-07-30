@@ -94,6 +94,10 @@ export const Mail = {
 	extract: (limit = 10) => api(`/v1/mail/extract?limit=${limit}`, { method: 'POST' })
 };
 
+export const Jobs = {
+	stats: () => api('/v1/jobs/stats')
+};
+
 export const Settings = {
 	get: () => api('/v1/settings'),
 	set: (patch) => api('/v1/settings', { method: 'PUT', body: patch })
