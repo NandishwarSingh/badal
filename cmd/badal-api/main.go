@@ -23,10 +23,13 @@ import (
 	"github.com/NandishwarSingh/badal/internal/chunks"
 	"github.com/NandishwarSingh/badal/internal/config"
 	"github.com/NandishwarSingh/badal/internal/httpx"
+	"github.com/NandishwarSingh/badal/internal/mail"
 	"github.com/NandishwarSingh/badal/internal/notes"
 	"github.com/NandishwarSingh/badal/internal/objects"
 	"github.com/NandishwarSingh/badal/internal/passkey"
 	"github.com/NandishwarSingh/badal/internal/push"
+	"github.com/NandishwarSingh/badal/internal/secretbox"
+	"github.com/NandishwarSingh/badal/internal/settings"
 	"github.com/NandishwarSingh/badal/internal/store"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
@@ -90,6 +93,34 @@ func main() {
 			}
 		}()
 		slog.Info("passkeys enabled", "rpid", cfg.RPID, "origin", cfg.Origin)
+	}
+
+	setSvc := settings.New(st.Pool)
+
+	// Mail is optional: without a secret key we cannot seal credentials, and
+	// storing an app password in plaintext is not an acceptable fallback.
+	var mailSvc *mail.Service
+	if k := os.Getenv("BADAL_SECRET_KEY"); k != "" {
+		box, err := secretbox.New(k)
+		if err != nil {
+			slog.Error("secret key", "err", err)
+			os.Exit(1)
+		}
+		mailSvc = mail.New(st.Pool, obj, box)
+		go mailSvc.Poll(ctx,
+			time.Duration(setSvc.Int(ctx, "mail.poll_seconds", 120))*time.Second,
+			setSvc.Int(ctx, "mail.backfill_days", 7),
+			func(r map[string]mail.SyncResult) {
+				for acct, res := range r {
+					if res.Fetched > 0 || res.Error != "" {
+						slog.Info("mail sync", "account", acct, "fetched", res.Fetched,
+							"backfill", res.Backfill, "err", res.Error)
+					}
+				}
+			})
+		slog.Info("mail ingestion enabled")
+	} else {
+		slog.Warn("BADAL_SECRET_KEY unset; mail ingestion disabled")
 	}
 
 	pushSvc, err := push.New(ctx, st.Pool, cfg.PushSubject)
@@ -521,6 +552,93 @@ func main() {
 		total, _ := pushSvc.Count(r.Context())
 		httpx.JSON(w, 200, map[string]any{"sent": n, "subscriptions": total})
 	}))
+
+	// ---------------------------------------------------------------- mail
+	mux.Handle("GET /v1/settings", authed(func(w http.ResponseWriter, r *http.Request) {
+		all, err := setSvc.All(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "settings_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, all)
+	}))
+
+	mux.Handle("PUT /v1/settings", authed(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		for k, v := range req {
+			if err := setSvc.Set(r.Context(), k, v); err != nil {
+				httpx.Err(w, 500, "set_failed", err.Error())
+				return
+			}
+		}
+		all, _ := setSvc.All(r.Context())
+		httpx.JSON(w, 200, all)
+	}))
+
+	if mailSvc != nil {
+		mux.Handle("GET /v1/mail/accounts", authed(func(w http.ResponseWriter, r *http.Request) {
+			list, err := mailSvc.Accounts(r.Context())
+			if err != nil {
+				httpx.Err(w, 500, "list_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"accounts": list})
+		}))
+
+		mux.Handle("POST /v1/mail/accounts", authed(func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Email    string `json:"email"`
+				Host     string `json:"imap_host"`
+				Port     int    `json:"imap_port"`
+				Username string `json:"username"`
+				Password string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				httpx.Err(w, 400, "bad_request", err.Error())
+				return
+			}
+			// Gmail shows app passwords in groups of four; people paste the spaces.
+			req.Password = strings.ReplaceAll(req.Password, " ", "")
+			a, err := mailSvc.AddAccount(r.Context(), req.Email, req.Host, req.Port, req.Username, req.Password)
+			if err != nil {
+				httpx.Err(w, 400, "add_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 201, a)
+		}))
+
+		mux.Handle("DELETE /v1/mail/accounts/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+			id, err := uuid.Parse(r.PathValue("id"))
+			if err != nil {
+				httpx.Err(w, 400, "bad_request", "invalid id")
+				return
+			}
+			if err := mailSvc.DeleteAccount(r.Context(), id); err != nil {
+				httpx.Err(w, 500, "delete_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"deleted": id})
+		}))
+
+		mux.Handle("POST /v1/mail/sync", authed(func(w http.ResponseWriter, r *http.Request) {
+			res := mailSvc.SyncAll(r.Context(), setSvc.Int(r.Context(), "mail.backfill_days", 7))
+			httpx.JSON(w, 200, map[string]any{"results": res})
+		}))
+
+		mux.Handle("GET /v1/mail/messages", authed(func(w http.ResponseWriter, r *http.Request) {
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			list, err := mailSvc.List(r.Context(), limit)
+			if err != nil {
+				httpx.Err(w, 500, "list_failed", err.Error())
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"messages": list, "count": len(list)})
+		}))
+	}
 
 	// --------------------------------------------------------------- notes
 	mux.Handle("GET /v1/notes", authed(func(w http.ResponseWriter, r *http.Request) {
