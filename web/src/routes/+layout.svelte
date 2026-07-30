@@ -14,6 +14,7 @@
 
 	const tabs = [
 		{ href: '/', label: 'Notes', d: 'M5 4h14v16H5z M9 9h6 M9 13h4' },
+		{ href: '/calendar', label: 'Calendar', d: 'M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4' },
 		{ href: '/search', label: 'Search', d: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M20 20l-4.2-4.2' },
 		{ href: '/new', label: 'Capture', d: 'M12 5v14 M5 12h14' },
 		{ href: '/settings', label: 'You', d: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0' }

@@ -147,7 +147,7 @@ main {
 	bottom: calc(var(--safe-b) + 8px);
 	z-index: 30;
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(5, 1fr);
 	border-radius: 20px;
 	/* Near-opaque so it needs nothing from behind it. */
 	background-color: #101216;
@@ -578,7 +578,7 @@ textarea {
 		bottom: auto;
 		margin: 0 auto 16px;
 		width: max-content;
-		grid-template-columns: repeat(4, max-content);
+		grid-template-columns: repeat(5, max-content);
 		border-radius: 16px;
 	}
 	.tabbar a {
@@ -758,4 +758,185 @@ textarea {
 	.resolve {
 		grid-template-columns: repeat(3, 1fr);
 	}
+}
+
+/* --------------------------------------------------------------- calendar */
+
+.seg {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 1fr;
+	gap: 4px;
+	padding: 4px;
+	margin-bottom: 13px;
+	border-radius: 14px;
+	background-color: var(--fill-field);
+	border: 1px solid var(--edge);
+}
+
+.seg button {
+	min-height: 38px;
+	padding: 7px 10px;
+	font-size: 13.5px;
+	border: none;
+	border-radius: 10px;
+	background: none;
+	background-image: none;
+	box-shadow: none;
+	color: var(--muted);
+}
+.seg button.on {
+	background-color: var(--fill-hi);
+	color: var(--text);
+	box-shadow: var(--rim);
+}
+
+.segbadge {
+	margin-left: 6px;
+	font-size: 10.5px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	background: var(--warn);
+	color: #1a1206;
+	font-weight: 700;
+}
+
+.calhead {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 9px;
+	font-size: 16px;
+}
+.calhead button {
+	min-height: 38px;
+	min-width: 40px;
+	font-size: 20px;
+	padding: 0;
+}
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 2px;
+	padding: 8px;
+	border-radius: var(--r);
+	margin-bottom: 16px;
+}
+
+.dow {
+	text-align: center;
+	font-size: 10.5px;
+	font-weight: 650;
+	color: var(--dim);
+	padding-bottom: 4px;
+}
+
+/* Square-ish cells with the number top-aligned, so a row of dots below never
+   pushes the date around as events load. */
+.day {
+	aspect-ratio: 1;
+	min-height: 0;
+	padding: 3px 0 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 3px;
+	font-size: 13px;
+	font-weight: 520;
+	border: 1px solid transparent;
+	border-radius: 9px;
+	background: none;
+	background-image: none;
+	box-shadow: none;
+	color: var(--text);
+}
+.day.other {
+	color: var(--dim);
+}
+.day.today {
+	color: var(--accent);
+	font-weight: 750;
+}
+.day.sel {
+	background-color: var(--fill-hi);
+	border-color: var(--edge-hi);
+}
+
+.dots {
+	display: flex;
+	gap: 2.5px;
+	height: 5px;
+}
+.dot {
+	width: 4.5px;
+	height: 4.5px;
+	border-radius: 50%;
+	background: var(--accent);
+	display: block;
+}
+.dot.deadline {
+	background: var(--danger);
+}
+.dot.exam {
+	background: var(--danger);
+}
+.dot.meeting {
+	background: var(--ok);
+}
+/* Proposed events look different from accepted ones on the grid, so an
+   unreviewed date never masquerades as a commitment. */
+.dot.prop {
+	background: none;
+	box-shadow: inset 0 0 0 1.5px var(--warn);
+}
+
+.agenda-h {
+	font-size: 14px;
+	font-weight: 620;
+	color: var(--muted);
+	margin: 0 0 9px 2px;
+}
+
+.ev {
+	display: flex;
+	gap: 12px;
+	padding: 12px 14px;
+	margin-bottom: 8px;
+	border-radius: var(--r);
+	background-color: var(--fill);
+	background-image: var(--sheen);
+	border: 1px solid var(--edge);
+	box-shadow: var(--rim);
+}
+
+.ev-time {
+	flex: none;
+	width: 58px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--accent);
+	font-variant-numeric: tabular-nums;
+	padding-top: 1px;
+}
+.ev-body {
+	flex: 1;
+	min-width: 0;
+}
+.ev-body strong {
+	font-size: 15px;
+	font-weight: 610;
+}
+
+/* The quoted span the extractor had to find in the source. */
+.evidence {
+	margin: 8px 0 6px;
+	padding: 7px 10px;
+	border-left: 2px solid var(--accent);
+	background: rgba(91, 157, 255, 0.06);
+	border-radius: 0 8px 8px 0;
+	font-size: 12.5px;
+	color: var(--muted);
+	font-style: italic;
+	overflow-wrap: anywhere;
 }

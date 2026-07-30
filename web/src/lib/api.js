@@ -76,6 +76,29 @@ export const Notes = {
 	related: (slug, depth = 1) => api(`/v1/notes/${encodeURIComponent(slug)}/related?depth=${depth}`)
 };
 
+export const Cal = {
+	range: (from, to) =>
+		api(`/v1/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+	proposed: () => api('/v1/events/proposed'),
+	setState: (id, state) => api(`/v1/events/${id}/state`, { method: 'POST', body: { state } }),
+	confirmAll: () => api('/v1/events/confirm-all', { method: 'POST' }),
+	patch: (id, p) => api(`/v1/events/${id}`, { method: 'PATCH', body: p }),
+	remove: (id) => api(`/v1/events/${id}`, { method: 'DELETE' }),
+	create: (e) => api('/v1/events', { method: 'POST', body: e })
+};
+
+export const Mail = {
+	messages: (limit = 60) => api(`/v1/mail/messages?limit=${limit}`),
+	accounts: () => api('/v1/mail/accounts'),
+	sync: () => api('/v1/mail/sync', { method: 'POST' }),
+	extract: (limit = 10) => api(`/v1/mail/extract?limit=${limit}`, { method: 'POST' })
+};
+
+export const Settings = {
+	get: () => api('/v1/settings'),
+	set: (patch) => api('/v1/settings', { method: 'PUT', body: patch })
+};
+
 export const Sync = {
 	since: (seq) => api(`/v1/sync?since=${seq || 0}`)
 };
