@@ -148,10 +148,18 @@
 		aria-label="Settings"
 		style="padding:6px 10px"
 	>
-		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7">
-			<circle cx="12" cy="12" r="3.2" />
-			<path d="M12 4v1.6 M12 18.4V20 M4 12h1.6 M18.4 12H20 M6.3 6.3l1.2 1.2 M16.5 16.5l1.2 1.2 M17.7 6.3l-1.2 1.2 M7.5 16.5l-1.2 1.2" />
-		</svg>
+		<!-- The same avatar the You tab used, so the icon means what it always
+		     meant; only its position changed. -->
+		<svg
+			viewBox="0 0 24 24"
+			width="21"
+			height="21"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.85"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>
 	</button>
 </div>
 
