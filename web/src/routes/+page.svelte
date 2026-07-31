@@ -199,21 +199,6 @@
 <div class="tasklist">
 	{#each tasks as t (t.id)}
 		<div class="taskrow" class:isdone={t.state !== 'open'}>
-			<!-- Ticking is the commonest action on this screen, so it gets the
-			     biggest target and never requires aim. -->
-			<button
-				class="tick"
-				class:on={t.state !== 'open'}
-				aria-label={t.state === 'open' ? 'Mark done' : 'Mark not done'}
-				onclick={() => toggle(t)}
-			>
-				{#if t.state !== 'open'}
-					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3">
-						<path d="M4 12.5l5 5L20 6.5" />
-					</svg>
-				{/if}
-			</button>
-
 			<button class="taskmain" onclick={() => (sheet = t)}>
 				<span class="tasktitle">{t.title}</span>
 				{#if t.due_at || hasReminder(t) || t.priority > 1 || t.recur_every || t.subjects?.length}
@@ -224,6 +209,22 @@
 						{#if t.priority > 1}<span class="prio">!</span>{/if}
 						{#each t.subjects ?? [] as s}<span class="subj">{s}</span>{/each}
 					</span>
+				{/if}
+			</button>
+
+			<!-- On the right, where the thumb already is. Ticking is the
+			     commonest action on this screen, so the whole trailing edge is
+			     the target and it never requires aim. -->
+			<button
+				class="tick"
+				class:on={t.state !== 'open'}
+				aria-label={t.state === 'open' ? 'Mark done' : 'Mark not done'}
+				onclick={() => toggle(t)}
+			>
+				{#if t.state !== 'open'}
+					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3">
+						<path d="M4 12.5l5 5L20 6.5" />
+					</svg>
 				{/if}
 			</button>
 		</div>
