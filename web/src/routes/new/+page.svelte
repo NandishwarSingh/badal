@@ -43,11 +43,13 @@
 	}
 </script>
 
-<div class="topbar">
-	<button class="ghost" onclick={() => goto('/')} style="padding:6px 10px;min-height:0">‹</button>
-	<h1>{shared ? 'Save shared' : 'Capture'}</h1>
-	<button class="primary" onclick={create} disabled={!title.trim() || busy}
-		style="padding:8px 16px;min-height:38px">
+<div class="pagehead">
+	<button class="iconbtn" onclick={() => goto('/notes')} aria-label="Back">
+		<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+	</button>
+	<h1 style="font-size:24px">{shared ? 'Save shared' : 'Capture'}</h1>
+	<span class="spacer"></span>
+	<button class="primary" onclick={create} disabled={!title.trim() || busy} style="padding:9px 18px">
 		{#if busy}<span class="spinner"></span>{/if} Save
 	</button>
 </div>

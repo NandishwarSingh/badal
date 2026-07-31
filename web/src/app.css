@@ -1857,12 +1857,12 @@ select {
   gap: 8px;
 }
 
-/* Now: tasks ----------------------------------------------------------- */
+/* Now: tasks ---------------------------------------------------------- */
 
 .quickadd {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .quickadd input {
   flex: 1;
@@ -1874,42 +1874,48 @@ select {
   padding: 0 16px;
 }
 
-.tasklist {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 62px;
-}
-
+/* A task row is a .grow with no tile: the tick on the right is the only
+   affordance it needs, and a second circle on the left would compete. */
 .taskrow {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  border-radius: var(--r);
-  background-color: var(--fill);
-  background-image: var(--sheen);
-  border: 1px solid var(--edge);
-  box-shadow: var(--rim);
-  overflow: hidden;
-  transition:
-    opacity 0.2s var(--ease),
-    border-color 0.16s var(--ease);
+  padding: 0 0 0 15px;
+  gap: 0;
+}
+.taskrow + .taskrow::before {
+  left: 15px;
 }
 .taskrow.isdone {
-  opacity: 0.5;
+  opacity: 0.48;
 }
-.taskrow.isdone .tasktitle {
+.taskrow.isdone .gtitle {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-/* The whole trailing edge is the tick target: commonest action on the
-   screen, and on the side a thumb already rests. */
+.taskmain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 12px 4px 12px 0;
+  min-height: 58px;
+  justify-content: center;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
+}
+
 .tick {
+  position: relative;
   flex: 0 0 auto;
   width: 52px;
-  min-height: 56px;
+  align-self: stretch;
+  min-height: 58px;
   display: grid;
   place-items: center;
   border: none;
@@ -1921,17 +1927,15 @@ select {
 }
 .tick::before {
   content: "";
+  position: absolute;
   width: 21px;
   height: 21px;
-  position: absolute;
   border-radius: 50%;
   border: 1.8px solid var(--edge-hi);
   transition:
     background-color 0.16s var(--ease),
-    border-color 0.16s var(--ease);
-}
-.tick {
-  position: relative;
+    border-color 0.16s var(--ease),
+    transform 0.12s var(--ease);
 }
 .tick svg {
   position: relative;
@@ -1945,55 +1949,22 @@ select {
   border-color: var(--ok);
 }
 .tick:active::before {
-  transform: scale(0.9);
+  transform: scale(0.88);
 }
 
-.taskmain {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 11px 4px 11px 15px;
-  min-height: 56px;
-  justify-content: center;
-  text-align: left;
-  border: none;
-  border-radius: 0;
-  background: none;
-  background-image: none;
-  box-shadow: none;
-  color: var(--text);
-}
-.tasktitle {
-  font-size: 15px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-.taskmeta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.taskmeta .overdue {
+.gsub .overdue {
   color: var(--danger);
-  font-weight: 600;
+  font-weight: 650;
 }
-.taskmeta .bell {
+.gsub .bellmark {
   color: var(--accent);
 }
-.taskmeta .prio {
+.gsub .rep {
+  color: var(--muted);
+}
+.gsub .prio {
   color: var(--warn);
   font-weight: 800;
-}
-
-.segbadge.alt {
-  background: var(--fill-hi);
-  color: var(--muted);
 }
 
 /* Sheet fields */
@@ -2154,4 +2125,353 @@ select {
 }
 .notesview .rendered > *:last-child {
   margin-bottom: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Revision 2 shell — grouped lists, big titles, colour-coded tiles.
+
+   The old surfaces were a stack of free-floating cards with gaps between
+   them. Every row carried its own border, its own shadow and its own eight
+   pixels of air, which made a list of six things look like six unrelated
+   objects and left almost no room for the text.
+
+   Grouping fixes it: one container, hairline dividers inset past the icon,
+   and the card's own edge doing the work all those borders were doing. It
+   is the pattern every dense mobile app converges on, and it reads far
+   quieter while fitting more.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Page head: the title lives in the content, not in a chrome bar. Large,
+   bold and scrolls away, with round actions on the right. */
+.pagehead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+.pagehead h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 760;
+  letter-spacing: -0.033em;
+  line-height: 1.1;
+}
+.pagehead .sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 450;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.iconbtn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background-color: var(--fill);
+  background-image: none;
+  border: 1px solid var(--edge);
+  box-shadow: none;
+  color: var(--text);
+  position: relative;
+  transition:
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+.iconbtn:active {
+  background-color: var(--fill-hi);
+  transform: scale(0.94);
+}
+.iconbtn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Section label above a group. Smaller than the page title, still bold. */
+.sectionhead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 24px 2px 9px;
+}
+.sectionhead:first-child {
+  margin-top: 6px;
+}
+.sectionhead h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sectionhead .count {
+  font-size: 13px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The grouped container. */
+.group {
+  border-radius: 18px;
+  background-color: var(--fill);
+  border: 1px solid var(--edge);
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+.group + .group {
+  margin-top: 12px;
+}
+
+/* A row. The divider is drawn by the row above via a pseudo-element inset
+   past the tile, so it lines up with the text rather than cutting the
+   whole card in half. */
+.grow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 14px;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color 0.14s var(--ease);
+}
+.grow + .grow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 61px;
+  right: 0;
+  height: 1px;
+  background: var(--edge);
+}
+.grow.noicon + .grow.noicon::before {
+  left: 14px;
+}
+.grow:active {
+  background-color: var(--fill-hi);
+}
+
+/* Colour-coded tile. Identity at a glance is most of what makes a long
+   list scannable, and colour does it faster than a label. */
+.gtile {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #0a0c0f;
+}
+.gtile svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gtile.blue {
+  background: #4a8cf7;
+}
+.gtile.green {
+  background: #3fb950;
+}
+.gtile.purple {
+  background: #a371f7;
+}
+.gtile.orange {
+  background: #f0883e;
+}
+.gtile.yellow {
+  background: #e3b341;
+}
+.gtile.red {
+  background: #f85149;
+}
+.gtile.grey {
+  background: #6e7681;
+}
+.gtile.slate {
+  background: #2c313a;
+  color: var(--text);
+}
+
+.gbody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gtitle {
+  font-size: 15.5px;
+  font-weight: 560;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.gsub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.chev {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* Feed rows: mail, search results, activity. No tile, no card — a flat
+   list with the same inset hairline, because these are read in sequence
+   rather than picked from. */
+.feed {
+  border-top: 1px solid var(--edge);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+.feedrow {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 2px;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
+  text-decoration: none;
+}
+.feedrow + .feedrow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 34px;
+  right: 0;
+  height: 1px;
+  background: var(--edge);
+}
+.feedrow:active {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+.feedmark {
+  flex: 0 0 auto;
+  width: 22px;
+  padding-top: 2px;
+  color: var(--dim);
+  font-size: 14px;
+  text-align: center;
+}
+.feedmain {
+  flex: 1;
+  min-width: 0;
+}
+.feedmeta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.feedmeta .when {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.feedtitle {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.34;
+  overflow-wrap: anywhere;
+}
+.feedsub {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* A card that says something and offers one action. */
+.callout {
+  padding: 18px;
+  border-radius: 18px;
+  background-color: var(--fill);
+  border: 1px solid var(--edge);
+  margin-bottom: 14px;
+}
+.callout .lead {
+  margin: 12px 0 6px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.24;
+}
+.callout p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.callout .badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #12060a;
+}
+.callout .act {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+}
+
+@media (min-width: 900px) {
+  .pagehead h1 {
+    font-size: 34px;
+  }
+  .grow:hover {
+    background-color: var(--fill-hi);
+  }
+  .feedrow:hover {
+    background-color: rgba(255, 255, 255, 0.035);
+  }
+  /* Wide screens get two columns of groups rather than one very long
+	   column of very wide rows. */
+  .groupcols {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  .groupcols .group + .group {
+    margin-top: 0;
+  }
 }

@@ -172,15 +172,19 @@
 	const hasReminder = (t) => (t.reminders || []).some((r) => !r.fired_at);
 </script>
 
-<div class="topbar">
-	<h1>Now</h1>
-	{#if sync.syncing}<span class="spinner"></span>{/if}
+<div class="pagehead">
+	<h1>
+		Now
+		<span class="sub">
+			{#if counts.overdue}{counts.overdue} overdue{:else if counts.open}{counts.open} open{:else}All clear{/if}
+			{#if sync.syncing}· syncing{/if}
+		</span>
+	</h1>
 	<span class="spacer"></span>
 	<!-- Activity: the in-app record of what fired. A push can be dismissed or
 	     never arrive at all, so the count is the thing that is actually true. -->
-	<button class="ghost bell" onclick={openActivity} aria-label="Activity" style="padding:6px 10px">
-		<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
-			stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+	<button class="iconbtn bell" onclick={openActivity} aria-label="Activity">
+		<svg viewBox="0 0 24 24">
 			<path d="M18 8.5a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5" />
 			<path d="M10.5 19a2 2 0 0 0 3 0" />
 		</svg>
@@ -188,24 +192,10 @@
 	</button>
 	<!-- Settings lives here, not in the tab bar: monthly use should not cost a
 	     fifth of the bar. See docs/DESIGN.md. -->
-	<button
-		class="ghost"
-		onclick={() => goto('/settings')}
-		aria-label="Settings"
-		style="padding:6px 10px"
-	>
-		<!-- The same avatar the You tab used, so the icon means what it always
-		     meant; only its position changed. -->
-		<svg
-			viewBox="0 0 24 24"
-			width="21"
-			height="21"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.85"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>
+	<button class="iconbtn" onclick={() => goto('/settings')} aria-label="Settings">
+		<svg viewBox="0 0 24 24">
+			<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0" />
+		</svg>
 	</button>
 </div>
 
@@ -242,40 +232,41 @@
 	</div>
 {/if}
 
-<div class="tasklist">
-	{#each tasks as t (t.id)}
-		<div class="taskrow" class:isdone={t.state !== 'open'}>
-			<button class="taskmain" onclick={() => (sheet = t)}>
-				<span class="tasktitle">{t.title}</span>
-				{#if t.due_at || hasReminder(t) || t.priority > 1 || t.recur_every || t.subjects?.length}
-					<span class="taskmeta">
-						{#if t.due_at}<span class:overdue={overdue(t)}>{relative(t.due_at)}</span>{/if}
-						{#if hasReminder(t)}<span class="bell" title="Reminder set">◔</span>{/if}
-						{#if t.recur_every}<span class="rep" title="Repeats {t.recur_every}ly">↻</span>{/if}
-						{#if t.priority > 1}<span class="prio">!</span>{/if}
-						{#each t.subjects ?? [] as s}<span class="subj">{s}</span>{/each}
-					</span>
-				{/if}
-			</button>
+{#if tasks.length}
+	<div class="group">
+		{#each tasks as t (t.id)}
+			<div class="grow taskrow" class:isdone={t.state !== 'open'}>
+				<button class="taskmain" onclick={() => (sheet = t)}>
+					<span class="gtitle">{t.title}</span>
+					{#if t.due_at || hasReminder(t) || t.priority > 1 || t.recur_every || t.subjects?.length}
+						<span class="gsub">
+							{#if t.due_at}<span class:overdue={overdue(t)}>{relative(t.due_at)}</span>{/if}
+							{#if hasReminder(t)}<span class="bellmark" title="Reminder set">◔</span>{/if}
+							{#if t.recur_every}<span class="rep" title="Repeats {t.recur_every}ly">↻</span>{/if}
+							{#if t.priority > 1}<span class="prio">!</span>{/if}
+							{#each t.subjects ?? [] as sj}<span class="subj">{sj}</span>{/each}
+						</span>
+					{/if}
+				</button>
 
-			<!-- On the right, where the thumb already is. Ticking is the
-			     commonest action on this screen, so the whole trailing edge is
-			     the target and it never requires aim. -->
-			<button
-				class="tick"
-				class:on={t.state !== 'open'}
-				aria-label={t.state === 'open' ? 'Mark done' : 'Mark not done'}
-				onclick={() => toggle(t)}
-			>
-				{#if t.state !== 'open'}
-					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3">
-						<path d="M4 12.5l5 5L20 6.5" />
-					</svg>
-				{/if}
-			</button>
-		</div>
-	{/each}
-</div>
+				<!-- On the right, where the thumb already is, and the whole
+				     trailing edge is the target. -->
+				<button
+					class="tick"
+					class:on={t.state !== 'open'}
+					aria-label={t.state === 'open' ? 'Mark done' : 'Mark not done'}
+					onclick={() => toggle(t)}
+				>
+					{#if t.state !== 'open'}
+						<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3">
+							<path d="M4 12.5l5 5L20 6.5" />
+						</svg>
+					{/if}
+				</button>
+			</div>
+		{/each}
+	</div>
+{/if}
 
 {#if activity}
 	<ActivitySheet

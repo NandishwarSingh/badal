@@ -148,7 +148,16 @@
 	}
 </script>
 
-<div class="topbar"><h1>You</h1></div>
+<div class="pagehead">
+	<h1>
+		You
+		<span class="sub">{signedIn ? 'Signed in' : 'Not signed in'}</span>
+	</h1>
+	<span class="spacer"></span>
+	<button class="iconbtn" onclick={() => run().then(refresh)} aria-label="Sync now" title="Sync now">
+		<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 4 M20 5v6h-6" /></svg>
+	</button>
+</div>
 
 {#if !signedIn}
 	<div class="card">
@@ -206,72 +215,109 @@
 	{#if err}<div class="banner err" style="margin-top:12px">{err}</div>{/if}
 {:else}
 	{#if !installed}
-		<div class="card">
-			<h3>Add to Home Screen</h3>
-			<p style="-webkit-line-clamp:5;line-clamp:5">
-				Share → Add to Home Screen. On iPhone this is required before notifications will work at
-				all, and it stops Safari evicting your offline notes.
+		<div class="callout">
+			<div class="badge" style="background:var(--warn)">
+				<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.1"
+					stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 16V4 M8 8l4-4 4 4 M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+				</svg>
+			</div>
+			<p class="lead">Add badal to your Home Screen.</p>
+			<p>
+				Share → Add to Home Screen. On iPhone this is required before notifications work at all,
+				and it stops Safari evicting your offline notes.
 			</p>
 		</div>
 	{/if}
 
-	<div class="card">
-		<div class="row">
-			<h3>Notifications</h3>
-			<span class="spacer"></span>
-			<span class="pill {push.subscribed ? 'ok' : ''}">{push.subscribed ? 'on' : 'off'}</span>
-		</div>
-		<p style="-webkit-line-clamp:3;line-clamp:3">
-			Web Push — no Apple Developer account needed.
-		</p>
-		<div class="row" style="margin-top:11px">
-			<button onclick={togglePush} disabled={busy === 'push' || !push.supported}>
-				{#if busy === 'push'}<span class="spinner"></span>{/if}
-				{push.subscribed ? 'Turn off' : 'Turn on'}
-			</button>
-			{#if push.subscribed}
-				<button class="ghost" onclick={testPush} disabled={busy === 'test'}>Send test</button>
-			{/if}
-		</div>
-	</div>
-
-	<div class="card">
-		<div class="row">
-			<h3>Passkeys</h3>
-			<span class="spacer"></span>
-			<span class="pill">{creds.length}</span>
-		</div>
-		{#each creds as c}
-			<div class="row" style="margin-top:8px">
-				<span class="muted">{c.label}</span>
-				<span class="spacer"></span>
-				{#if c.synced}<span class="pill ok">synced</span>{/if}
+	<div class="groupcols">
+		<div>
+			<div class="sectionhead"><h2>Alerts</h2></div>
+			<div class="group">
+				<div class="grow">
+					<span class="gtile red">
+						<svg viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5" /><path d="M10.5 19a2 2 0 0 0 3 0" /></svg>
+					</span>
+					<span class="gbody">
+						<span class="gtitle">Notifications</span>
+						<span class="gsub">Web Push — no Apple account needed</span>
+					</span>
+					<span class="pill {push.subscribed ? 'ok' : ''}">{push.subscribed ? 'on' : 'off'}</span>
+				</div>
+				<div class="grow noicon" style="gap:8px">
+					<button onclick={togglePush} disabled={busy === 'push' || !push.supported}>
+						{#if busy === 'push'}<span class="spinner"></span>{/if}
+						{push.subscribed ? 'Turn off' : 'Turn on'}
+					</button>
+					{#if push.subscribed}
+						<button class="ghost" onclick={testPush} disabled={busy === 'test'}>Send test</button>
+					{/if}
+				</div>
 			</div>
-		{/each}
-		{#if canPasskey}
-			<button style="width:100%;margin-top:11px" onclick={doEnrol} disabled={busy === 'enrol'}>
-				{#if busy === 'enrol'}<span class="spinner"></span>{/if} Add a passkey for this device
-			</button>
-		{/if}
+		</div>
+
+		<div>
+			<div class="sectionhead">
+				<h2>Sign-in</h2>
+				<span class="count">{creds.length} passkey{creds.length === 1 ? '' : 's'}</span>
+			</div>
+			<div class="group">
+				{#each creds as c}
+					<div class="grow">
+						<span class="gtile purple">
+							<svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>
+						</span>
+						<span class="gbody">
+							<span class="gtitle">{c.label}</span>
+							{#if c.synced}<span class="gsub">Synced across your devices</span>{/if}
+						</span>
+					</div>
+				{/each}
+				{#if canPasskey}
+					<button class="grow" onclick={doEnrol} disabled={busy === 'enrol'}>
+						<span class="gtile slate">
+							<svg viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14" /></svg>
+						</span>
+						<span class="gbody"><span class="gtitle">Add a passkey for this device</span></span>
+						{#if busy === 'enrol'}<span class="spinner"></span>{:else}<span class="chev">›</span>{/if}
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<div>
+			<div class="sectionhead"><h2>Storage</h2></div>
+			<div class="group">
+				<div class="grow">
+					<span class="gtile blue">
+						<svg viewBox="0 0 24 24"><path d="M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7" /></svg>
+					</span>
+					<span class="gbody">
+						<span class="gtitle">{counts.notes} notes cached</span>
+						<span class="gsub">{counts.queued} waiting to sync</span>
+					</span>
+					<span class="pill {sync.online ? 'ok' : 'warn'}">{sync.online ? 'online' : 'offline'}</span>
+				</div>
+				<div class="grow">
+					<span class="gtile {persisted ? 'green' : 'orange'}">
+						<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" /></svg>
+					</span>
+					<span class="gbody">
+						<span class="gtitle">{persisted ? 'Storage persisted' : 'Eviction possible'}</span>
+						<span class="gsub">
+							{persisted
+								? 'The browser will not clear your offline copy'
+								: 'Install to the Home Screen to make this durable'}
+						</span>
+					</span>
+				</div>
+			</div>
+		</div>
 	</div>
 
-	<div class="card">
-		<h3>Storage</h3>
-		<div class="row" style="margin-top:7px">
-			<span class="muted">{counts.notes} notes cached · {counts.queued} queued</span>
-			<span class="spacer"></span>
-			<span class="pill {sync.online ? 'ok' : 'warn'}">{sync.online ? 'online' : 'offline'}</span>
-		</div>
-		<div class="row" style="margin-top:8px">
-			<span class="pill {persisted ? 'ok' : 'warn'}">
-				{persisted ? 'storage persisted' : 'eviction possible'}
-			</span>
-		</div>
-	</div>
+	{#if err}<div class="banner err" style="margin-top:14px">{err}</div>{/if}
 
-	{#if err}<div class="banner err">{err}</div>{/if}
-
-	<div class="row" style="margin-top:14px">
+	<div class="row" style="margin-top:18px">
 		<button onclick={() => run().then(refresh)}>Sync now</button>
 		<span class="spacer"></span>
 		<button class="danger" onclick={doLogout}>Sign out</button>

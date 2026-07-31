@@ -89,7 +89,10 @@
 		if (h.source_type === 'message') return `/calendar?mail=${h.source_id}`;
 		return '/calendar';
 	}
-	const icon = { note: 'note', message: 'mail', event: 'event' };
+	const icon = { note: 'note', message: 'mail', event: 'event', task: 'task' };
+	// A glyph per type, so the eye can skip to the kind it wants without
+	// reading the label on every row.
+	const mark = { note: '▤', message: '✉', event: '◇', task: '☑' };
 
 	let labels = $state({});
 	$effect(() => {
@@ -103,8 +106,12 @@
 	});
 </script>
 
-<div class="topbar">
-	<h1>Smart search</h1>
+<div class="pagehead">
+	<h1>
+		Search
+		<span class="sub">Ask in your own words — wording need not match</span>
+	</h1>
+	<span class="spacer"></span>
 	{#if busy}<span class="spinner"></span>{/if}
 </div>
 
@@ -141,21 +148,23 @@
 	<div class="muted" style="margin:-2px 0 10px">{hits.length} tagged items</div>
 {/if}
 
-<div class="cards">
+<div class="feed">
 	{#each hits as h, i (h.source_type + (h.source_id ?? h.slug) + i)}
-		<a class="card" href={href(h)}>
-			<div class="row">
-				<span class="tag">{icon[h.source_type] ?? h.source_type}</span>
-				<span class="spacer"></span>
-				{#if h.score}<span class="pill">{Math.round(h.score * 100)}%</span>{/if}
-			</div>
-			<h3 style="margin-top:7px">{h.title || '(untitled)'}</h3>
-			{#if h.snippet}<p>{mailSnippet(h.snippet, 170)}</p>{/if}
-			{#if h.subjects?.length}
-				<div class="subjs">
-					{#each h.subjects as s}<span class="subj">{labels[s] ?? s}</span>{/each}
-				</div>
-			{/if}
+		<a class="feedrow" href={href(h)}>
+			<span class="feedmark {h.source_type}">{mark[h.source_type] ?? '•'}</span>
+			<span class="feedmain">
+				<span class="feedmeta">
+					<span>{icon[h.source_type] ?? h.source_type}</span>
+					{#if h.score}<span class="when">{Math.round(h.score * 100)}%</span>{/if}
+				</span>
+				<span class="feedtitle">{h.title || '(untitled)'}</span>
+				{#if h.snippet}<span class="feedsub">{mailSnippet(h.snippet, 150)}</span>{/if}
+				{#if h.subjects?.length}
+					<span class="subjs">
+						{#each h.subjects as sj}<span class="subj">{labels[sj] ?? sj}</span>{/each}
+					</span>
+				{/if}
+			</span>
 		</a>
 	{/each}
 </div>

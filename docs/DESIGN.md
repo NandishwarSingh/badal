@@ -170,6 +170,30 @@ Applying the ladder to every shipped and planned feature:
 
 Twenty-three features, three tabs, no drawer.
 
+## 5a. The grouped-list shell (revision 2)
+
+The first build was a stack of free-floating cards with gaps between them.
+Every row carried its own border, its own shadow and its own eight pixels of
+air, so six items looked like six unrelated objects and the text had nowhere
+to go.
+
+Grouping fixes it, and it is what every dense mobile app converges on:
+
+| Primitive | Use |
+|---|---|
+| `.pagehead` | Large bold title **in the content**, not a chrome bar. Scrolls away. Round actions on the right |
+| `.iconbtn` | 40px circular header action — bell, settings, add, back |
+| `.group` + `.grow` | One container, hairline dividers **inset past the icon** so they line up with the text |
+| `.gtile` | 34px colour-coded tile. Identity at a glance is most of what makes a long list scannable, and colour does it faster than a label |
+| `.feed` + `.feedrow` | Flat inset-divider list for things read in sequence — mail, search results, activity. No tile, no card |
+| `.callout` | Circular badge, big headline, muted body, one right-aligned action |
+| `.sectionhead` | Bold label above a group, with an optional count |
+
+Where each goes: **grouped rows** for lists you pick from (settings, notes,
+tasks, links), **feed rows** for lists you read down (mail, search, activity).
+Getting that the wrong way round is what made search results look like
+navigation and settings look like a feed.
+
 ## 6. Component vocabulary
 
 These exist. Reach for one before inventing anything.

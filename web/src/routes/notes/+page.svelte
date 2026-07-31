@@ -45,10 +45,18 @@
 	}
 </script>
 
-<div class="topbar">
-	<h1>Notes</h1>
+<div class="pagehead">
+	<h1>
+		Notes
+		<span class="sub">
+			{notes.length} note{notes.length === 1 ? '' : 's'}{#if sync.pending} · {sync.pending} queued{/if}
+		</span>
+	</h1>
+	<span class="spacer"></span>
 	{#if sync.syncing}<span class="spinner"></span>{/if}
-	{#if sync.pending}<span class="pill warn">{sync.pending}</span>{/if}
+	<button class="iconbtn" onclick={() => goto('/new')} aria-label="New note">
+		<svg viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14" /></svg>
+	</button>
 </div>
 
 {#if sync.conflicts}
@@ -65,27 +73,22 @@
 		<p>Tap <strong>Capture</strong> to write your first note.</p>
 	</div>
 {:else}
-	<div class="cards">
-	{#each notes as n, i (n.slug)}
-		<a
-			class="card"
-			class:pending={n._dirty}
-			href="/note/{n.slug}"
-		>
-			<div class="row">
-				<h3>{n.title}</h3>
-				<span class="spacer"></span>
-				{#if n._dirty}<span class="pill">saving</span>{/if}
-			</div>
-			{#if preview(n.body)}<p>{preview(n.body)}</p>{/if}
-			<div class="row" style="margin-top:7px">
-				{#each n.tags || [] as t}<span class="tag">{t}</span>{/each}
-				<span class="spacer"></span>
-				<span class="muted">{when(n.updated_at)}</span>
-			</div>
-		</a>
-	{/each}
+	<div class="group">
+		{#each notes as n (n.slug)}
+			<a class="grow" href="/note/{n.slug}">
+				<span class="gtile slate">
+					<svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z M9 9h6 M9 13h4" /></svg>
+				</span>
+				<span class="gbody">
+					<span class="gtitle">{n.title}</span>
+					<span class="gsub">
+						<span>{when(n.updated_at)}</span>
+						{#if n._dirty}<span class="pill">saving</span>{/if}
+						{#each n.tags || [] as t}<span class="subj">{t}</span>{/each}
+					</span>
+				</span>
+				<span class="chev">›</span>
+			</a>
+		{/each}
 	</div>
 {/if}
-
-<button class="fab" onclick={() => goto('/new')} aria-label="New note">+</button>

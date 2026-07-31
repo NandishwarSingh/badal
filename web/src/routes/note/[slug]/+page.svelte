@@ -139,13 +139,18 @@
 
 </script>
 
-<div class="topbar">
-	<button class="ghost" onclick={() => goto('/')} aria-label="Back" style="padding:6px 10px">‹</button>
-	<h1>{title || slug}</h1>
-	{#if saving}<span class="pill">saving…</span>
-	{:else if dirty}<span class="pill warn">unsaved</span>{/if}
-	<button class="ghost" onclick={() => (editing = !editing)} style="padding:6px 12px">
-		{editing ? 'Done' : 'Edit'}
+<div class="pagehead">
+	<button class="iconbtn" onclick={() => goto('/notes')} aria-label="Back">
+		<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+	</button>
+	<h1 style="font-size:22px;flex:1;min-width:0">{title || slug}</h1>
+	{#if saving}<span class="pill">saving…</span>{:else if dirty}<span class="pill warn">unsaved</span>{/if}
+	<button class="iconbtn" onclick={() => (editing = !editing)} aria-label={editing ? 'Done' : 'Edit'}>
+		{#if editing}
+			<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5" /></svg>
+		{:else}
+			<svg viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16z M13.5 6.5l4 4" /></svg>
+		{/if}
 	</button>
 </div>
 
@@ -210,22 +215,38 @@
 	<Rendered {body} />
 
 	{#if outlinks.length}
-		<h3 style="margin-top:26px;font-size:14px" class="muted">Links to</h3>
-		{#each outlinks as l}
-			<a class="card" href="/note/{l.slug}" style="padding:10px 13px;min-height:0">
-				<div class="row">
-					<span>{l.title || l.slug}</span>
-					<span class="spacer"></span>
-					{#if !l.id}<span class="pill">not created</span>{/if}
-				</div>
-			</a>
-		{/each}
+		<div class="sectionhead"><h2>Links to</h2></div>
+		<div class="group">
+			{#each outlinks as l}
+				<a class="grow" href="/note/{l.slug}">
+					<span class="gtile blue">
+						<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" /><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></svg>
+					</span>
+					<span class="gbody">
+						<span class="gtitle">{l.title || l.slug}</span>
+						{#if !l.id}<span class="gsub">not created yet</span>{/if}
+					</span>
+					<span class="chev">›</span>
+				</a>
+			{/each}
+		</div>
 	{/if}
 
 	{#if backlinks.length}
-		<h3 style="margin-top:20px;font-size:14px" class="muted">Linked from</h3>
-		{#each backlinks as l}
-			<a class="card" href="/note/{l.slug}" style="padding:10px 13px;min-height:0">{l.title || l.slug}</a>
-		{/each}
+		<div class="sectionhead"><h2>Linked from</h2></div>
+		<div class="group">
+			{#each backlinks as l}
+				<a class="grow" href="/note/{l.slug}">
+					<span class="gtile purple">
+						<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" /><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" /></svg>
+					</span>
+					<span class="gbody">
+						<span class="gtitle">{l.title || l.slug}</span>
+						{#if !l.id}<span class="gsub">not created yet</span>{/if}
+					</span>
+					<span class="chev">›</span>
+				</a>
+			{/each}
+		</div>
 	{/if}
 {/if}

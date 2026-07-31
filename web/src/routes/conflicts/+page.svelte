@@ -19,9 +19,11 @@
 	});
 </script>
 
-<div class="topbar">
-	<button class="ghost" onclick={() => goto('/')} style="padding:6px 10px;min-height:0">‹</button>
-	<h1>Conflicts</h1>
+<div class="pagehead">
+	<button class="iconbtn" onclick={() => goto('/notes')} aria-label="Back">
+		<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+	</button>
+	<h1 style="font-size:24px">Conflicts</h1>
 </div>
 
 {#if loading}

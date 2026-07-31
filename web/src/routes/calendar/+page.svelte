@@ -193,10 +193,22 @@
 		});
 </script>
 
-<div class="topbar">
-	<h1>{view === 'mail' ? 'Mail' : view === 'review' ? 'Review' : 'Calendar'}</h1>
-	<button class="ghost" onclick={syncMail} disabled={!!busy} style="padding:6px 10px;min-height:0">
-		{#if busy === 'sync'}<span class="spinner"></span>{:else}↻{/if}
+<div class="pagehead">
+	<h1>
+		{view === 'mail' ? 'Mail' : view === 'review' ? 'Review' : 'Calendar'}
+		<span class="sub">
+			{#if view === 'mail'}{messages.length} messages
+			{:else if view === 'review'}{counts.proposed} waiting on you
+			{:else}{counts.confirmed ?? 0} on the calendar{/if}
+		</span>
+	</h1>
+	<span class="spacer"></span>
+	<button class="iconbtn" onclick={syncMail} disabled={!!busy} aria-label="Sync mail">
+		{#if busy === 'sync'}
+			<span class="spinner"></span>
+		{:else}
+			<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 4 M20 5v6h-6" /></svg>
+		{/if}
 	</button>
 </div>
 
@@ -295,24 +307,27 @@
 	{#if messages.length === 0}
 		<div class="empty">No mail yet.</div>
 	{:else}
-		{#each messages as m (m.id)}
-			<button class="card" style="min-height:0;width:100%;text-align:left"
-				onclick={() => (mailSheet = m.id)}>
-				<div class="row">
-					<strong style="font-size:15px">{m.from_name || m.from_addr}</strong>
-					<span class="spacer"></span>
-					<span class="muted" style="font-size:12px">{fmtWhen(m.received_at)}</span>
-				</div>
-				<div style="margin:3px 0 4px;font-size:14px">{m.subject || '(no subject)'}</div>
-				<p style="font-size:13px">{mailSnippet(m.snippet, 150)}</p>
-				{#if m.subjects?.length || !m.extracted}
-					<div class="subjs">
-						{#each m.subjects ?? [] as s}<span class="subj">{subjectLabels[s] ?? s}</span>{/each}
-						{#if !m.extracted}<span class="pill warn">not scanned</span>{/if}
-					</div>
-				{/if}
-			</button>
-		{/each}
+		<div class="feed">
+			{#each messages as m (m.id)}
+				<button class="feedrow" onclick={() => (mailSheet = m.id)}>
+					<span class="feedmark">✉</span>
+					<span class="feedmain">
+						<span class="feedmeta">
+							<span>{m.from_name || m.from_addr}</span>
+							<span class="when">{fmtWhen(m.received_at)}</span>
+						</span>
+						<span class="feedtitle">{m.subject || '(no subject)'}</span>
+						<span class="feedsub">{mailSnippet(m.snippet, 130)}</span>
+						{#if m.subjects?.length || !m.extracted}
+							<span class="subjs">
+								{#each m.subjects ?? [] as sj}<span class="subj">{subjectLabels[sj] ?? sj}</span>{/each}
+								{#if !m.extracted}<span class="pill warn">not scanned</span>{/if}
+							</span>
+						{/if}
+					</span>
+				</button>
+			{/each}
+		</div>
 	{/if}
 
 {:else}
