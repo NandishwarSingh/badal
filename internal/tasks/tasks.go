@@ -27,23 +27,25 @@ var (
 )
 
 type Task struct {
-	ID          uuid.UUID  `json:"id"`
-	Title       string     `json:"title"`
-	Notes       string     `json:"notes"`
-	State       string     `json:"state"`
-	Priority    int        `json:"priority"`
-	DueAt       *time.Time `json:"due_at,omitempty"`
-	AllDay      bool       `json:"all_day"`
-	NoteID      *uuid.UUID `json:"note_id,omitempty"`
-	EventID     *uuid.UUID `json:"event_id,omitempty"`
-	MessageID   *uuid.UUID `json:"message_id,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	Version     int        `json:"version"`
-	HLC         string     `json:"hlc"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	Reminders   []Reminder `json:"reminders"`
-	Subjects    []string   `json:"subjects,omitempty"`
+	ID            uuid.UUID  `json:"id"`
+	Title         string     `json:"title"`
+	Notes         string     `json:"notes"`
+	State         string     `json:"state"`
+	Priority      int        `json:"priority"`
+	DueAt         *time.Time `json:"due_at,omitempty"`
+	AllDay        bool       `json:"all_day"`
+	NoteID        *uuid.UUID `json:"note_id,omitempty"`
+	EventID       *uuid.UUID `json:"event_id,omitempty"`
+	MessageID     *uuid.UUID `json:"message_id,omitempty"`
+	RecurEvery    string     `json:"recur_every,omitempty"`
+	RecurInterval int        `json:"recur_interval,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	Version       int        `json:"version"`
+	HLC           string     `json:"hlc"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	Reminders     []Reminder `json:"reminders"`
+	Subjects      []string   `json:"subjects,omitempty"`
 }
 
 type Reminder struct {
@@ -76,6 +78,10 @@ type PutInput struct {
 	MessageID *uuid.UUID  `json:"message_id"`
 	Version   *int        `json:"version"`
 	RemindAt  []time.Time `json:"remind_at"`
+
+	// "" or absent means it does not repeat. Interval defaults to 1.
+	RecurEvery    string `json:"recur_every"`
+	RecurInterval int    `json:"recur_interval"`
 }
 
 // Put creates or updates a task, replacing its reminders.
@@ -98,6 +104,24 @@ func (s *Service) Put(ctx context.Context, device uuid.UUID, in PutInput) (Task,
 	if in.Priority < 0 || in.Priority > 3 {
 		return Task{}, fmt.Errorf("priority must be 0..3")
 	}
+	switch in.RecurEvery {
+	case "", "day", "week", "month", "year":
+	default:
+		return Task{}, fmt.Errorf("bad recur_every %q", in.RecurEvery)
+	}
+	// A repeat needs something to advance from, and the constraint would
+	// reject it anyway -- better a clear message than a constraint violation.
+	if in.RecurEvery != "" && in.DueAt == nil {
+		return Task{}, fmt.Errorf("a repeating task needs a due date")
+	}
+	interval := in.RecurInterval
+	if interval < 1 {
+		interval = 1
+	}
+	var every any
+	if in.RecurEvery != "" {
+		every = in.RecurEvery
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -111,11 +135,13 @@ func (s *Service) Put(ctx context.Context, device uuid.UUID, in PutInput) (Task,
 	if in.ID == nil {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO tasks (title, notes, state, priority, due_at, all_day,
-			                   note_id, event_id, message_id, hlc, completed_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, CASE WHEN $3='done' THEN now() END)
+			                   note_id, event_id, message_id, hlc,
+			                   recur_every, recur_interval, completed_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+			        CASE WHEN $3='done' THEN now() END)
 			RETURNING id`,
 			title, in.Notes, state, in.Priority, in.DueAt, allDay,
-			in.NoteID, in.EventID, in.MessageID, hlc).Scan(&id)
+			in.NoteID, in.EventID, in.MessageID, hlc, every, interval).Scan(&id)
 		if err != nil {
 			return Task{}, err
 		}
@@ -130,11 +156,13 @@ func (s *Service) Put(ctx context.Context, device uuid.UUID, in PutInput) (Task,
 			// here would strand everything captured in aeroplane mode.
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO tasks (id, title, notes, state, priority, due_at, all_day,
-				                   note_id, event_id, message_id, hlc, completed_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $4='done' THEN now() END)
+				                   note_id, event_id, message_id, hlc,
+				                   recur_every, recur_interval, completed_at)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+				        CASE WHEN $4='done' THEN now() END)
 				ON CONFLICT (id) DO NOTHING`,
 				id, title, in.Notes, state, in.Priority, in.DueAt, allDay,
-				in.NoteID, in.EventID, in.MessageID, hlc); err != nil {
+				in.NoteID, in.EventID, in.MessageID, hlc, every, interval); err != nil {
 				return Task{}, err
 			}
 			current = -1 // skip the update below
@@ -157,10 +185,11 @@ func (s *Service) Put(ctx context.Context, device uuid.UUID, in PutInput) (Task,
 			           WHEN $4='done' AND completed_at IS NULL THEN now()
 			           WHEN $4<>'done' THEN NULL
 			           ELSE completed_at END,
+			       recur_every=$12, recur_interval=$13,
 			       version=version+1, hlc=$11, updated_at=now()
 			 WHERE id=$1`,
 				id, title, in.Notes, state, in.Priority, in.DueAt, allDay,
-				in.NoteID, in.EventID, in.MessageID, hlc)
+				in.NoteID, in.EventID, in.MessageID, hlc, every, interval)
 			if err != nil {
 				return Task{}, err
 			}
@@ -200,8 +229,10 @@ func (s *Service) Put(ctx context.Context, device uuid.UUID, in PutInput) (Task,
 	return s.Get(ctx, id)
 }
 
-// SetState is the one-tap path: tick, untick, or drop.
-func (s *Service) SetState(ctx context.Context, device uuid.UUID, id uuid.UUID, state string) (Task, error) {
+// SetState is the one-tap path: tick, untick, or drop. Completing a repeating
+// task also schedules the next occurrence, which is why it needs a timezone --
+// "every month" has to land at the same local hour after a DST shift.
+func (s *Service) SetState(ctx context.Context, device uuid.UUID, id uuid.UUID, state string, loc *time.Location) (Task, error) {
 	if state != "open" && state != "done" && state != "dropped" {
 		return Task{}, fmt.Errorf("bad state %q", state)
 	}
@@ -229,6 +260,22 @@ func (s *Service) SetState(ctx context.Context, device uuid.UUID, id uuid.UUID, 
 			`UPDATE task_reminders SET fired_at=now() WHERE task_id=$1 AND fired_at IS NULL`,
 			id); err != nil {
 			return Task{}, err
+		}
+	}
+	// A repeat closes and reappears rather than moving, so the Done list is a
+	// record of what you actually finished.
+	if state == "done" {
+		if loc == nil {
+			loc = time.UTC
+		}
+		nextID, err := s.spawnNext(ctx, tx, id, loc)
+		if err != nil {
+			return Task{}, err
+		}
+		if nextID != uuid.Nil {
+			if _, err := s.feed.Append(ctx, tx, "task", nextID, "upsert", device); err != nil {
+				return Task{}, err
+			}
 		}
 	}
 	if _, err := s.feed.Append(ctx, tx, "task", id, "upsert", device); err != nil {
@@ -302,7 +349,8 @@ func (s *Service) Delete(ctx context.Context, device, id uuid.UUID) error {
 
 const selectTask = `
 	SELECT t.id, t.title, t.notes, t.state, t.priority, t.due_at, t.all_day,
-	       t.note_id, t.event_id, t.message_id, t.completed_at,
+	       t.note_id, t.event_id, t.message_id,
+	       coalesce(t.recur_every,''), t.recur_interval, t.completed_at,
 	       t.version, t.hlc, t.created_at, t.updated_at,
 	       coalesce(sj.subs, '{}') AS subjects
 	  FROM tasks t
@@ -319,7 +367,8 @@ func (s *Service) scan(rows pgx.Rows) ([]Task, error) {
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Title, &t.Notes, &t.State, &t.Priority, &t.DueAt,
-			&t.AllDay, &t.NoteID, &t.EventID, &t.MessageID, &t.CompletedAt,
+			&t.AllDay, &t.NoteID, &t.EventID, &t.MessageID,
+			&t.RecurEvery, &t.RecurInterval, &t.CompletedAt,
 			&t.Version, &t.HLC, &t.CreatedAt, &t.UpdatedAt, &t.Subjects); err != nil {
 			return nil, err
 		}
@@ -451,4 +500,65 @@ func (s *Service) Counts(ctx context.Context, loc *time.Location) (Counts, error
 		  FROM tasks WHERE deleted_at IS NULL`, end).
 		Scan(&c.Open, &c.Overdue, &c.Today, &c.Done)
 	return c, err
+}
+
+// FromEvent turns an extracted calendar event into a task.
+//
+// Idempotent: a second tap returns the task the first one made rather than a
+// duplicate. The Review queue is a list you work down, and double-tapping a
+// row there is normal.
+func (s *Service) FromEvent(ctx context.Context, device, eventID uuid.UUID) (Task, bool, error) {
+	var existing uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT id FROM tasks WHERE event_id=$1 AND deleted_at IS NULL LIMIT 1`, eventID).
+		Scan(&existing)
+	if err == nil {
+		t, err := s.Get(ctx, existing)
+		return t, false, err
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return Task{}, false, err
+	}
+
+	var (
+		title    string
+		startsAt time.Time
+		allDay   bool
+		location string
+		msgID    *uuid.UUID
+	)
+	if err := s.pool.QueryRow(ctx, `
+		SELECT title, starts_at, all_day, location, source_message
+		  FROM events WHERE id=$1 AND deleted_at IS NULL`, eventID).
+		Scan(&title, &startsAt, &allDay, &location, &msgID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Task{}, false, ErrNotFound
+		}
+		return Task{}, false, err
+	}
+
+	notes := ""
+	if location != "" {
+		notes = "Where: " + location
+	}
+	t, err := s.Put(ctx, device, PutInput{
+		Title:     title,
+		Notes:     notes,
+		DueAt:     &startsAt,
+		AllDay:    &allDay,
+		EventID:   &eventID,
+		MessageID: msgID,
+		// A deadline you have chosen to track is worth one nudge the day
+		// before; the event itself already shows on the calendar.
+		RemindAt: dayBefore(startsAt),
+	})
+	return t, true, err
+}
+
+func dayBefore(t time.Time) []time.Time {
+	at := t.AddDate(0, 0, -1)
+	if at.Before(time.Now()) {
+		return nil
+	}
+	return []time.Time{at}
 }

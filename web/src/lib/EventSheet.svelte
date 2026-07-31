@@ -104,6 +104,21 @@
 		}
 	}
 
+	let taskAdded = $state(false);
+
+	async function addTask() {
+		busy = 'task';
+		try {
+			const r = await api(`/v1/events/${e.id}/task`, { method: 'POST' });
+			taskAdded = true;
+			toast(r.created ? 'Added to tasks' : 'Already on your list');
+		} catch (x) {
+			toast(x.message || 'Could not add');
+		} finally {
+			busy = '';
+		}
+	}
+
 	async function remove() {
 		if (!confirm('Delete this event?')) return;
 		busy = 'del';
@@ -205,6 +220,12 @@
 			{:else}
 				<button onclick={() => setState('proposed')} disabled={!!busy}>Un-confirm</button>
 			{/if}
+			<!-- An event says something is happening; a task says you intend to
+			     do something about it. Committing is a separate act. -->
+			<button onclick={addTask} disabled={!!busy}>
+				{#if busy === 'task'}<span class="spinner"></span>{/if}
+				{taskAdded ? 'On your list ✓' : 'Add to tasks'}
+			</button>
 			<div class="row" style="gap:8px">
 				<button style="flex:1" onclick={() => (editing = true)} disabled={!!busy}>Edit</button>
 				<button class="danger" onclick={remove} disabled={!!busy}>Delete</button>

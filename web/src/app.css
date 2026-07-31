@@ -2031,3 +2031,7 @@ select {
     overflow-x: visible;
   }
 }
+
+.taskmeta .rep {
+  color: var(--muted);
+}

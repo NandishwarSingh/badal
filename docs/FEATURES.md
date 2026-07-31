@@ -34,13 +34,13 @@ the running order.
 
 ## Next
 
-### Finish tasks
+### Finish tasks — done
 
 | # | Feature | You verify | Size |
 |---|---|---|---|
-| 1 | **Mail deadline → task**, one tap from Review | A deadline in Review becomes a task that keeps a link back to the mail | S |
-| 2 | **Repeating tasks** — daily, weekly, monthly, every N | A weekly task reappears after you complete it | M |
-| 3 | **Tasks in search and the digest** | Search finds a task by its text; the 07:00 push lists what is due today | S |
+| 1 | ✅ **Mail deadline → task**, one tap from an event | A deadline becomes a task that keeps a link back to the mail | S |
+| 2 | ✅ **Repeating tasks** — daily, weekly, monthly | A weekly task reappears after you complete it | M |
+| 3 | ✅ **Tasks in search and the digest** | Search finds a task by its text; the 07:00 push lists what is due today | S |
 
 ### One corpus
 
@@ -119,9 +119,6 @@ That one is mine to do.
 ---
 
 ## Order, and how much it matters
-
-1–3 finish what is half-built; leaving tasks partly done is worse than not
-having started, because the home screen is the one screen you always see.
 
 4–6 are the design guide's argument made real, and 4 is worth doing before the
 list grows: it removes a tab and mostly deletes code.

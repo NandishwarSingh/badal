@@ -331,6 +331,9 @@ func (s *Service) Pending(ctx context.Context, limit int) ([]Item, error) {
 		  UNION ALL
 		  SELECT 'message', m.id, m.subject, m.body_text, m.received_at FROM messages m
 		  UNION ALL
+		  SELECT 'task', k.id, k.title, k.notes, coalesce(k.due_at, k.created_at)
+		    FROM tasks k WHERE k.deleted_at IS NULL
+		  UNION ALL
 		  SELECT 'event', v.id, v.title,
 		         coalesce(v.notes,'') || ' ' || coalesce(v.location,'') || ' ' || coalesce(v.evidence,''),
 		         v.starts_at

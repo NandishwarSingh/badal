@@ -143,7 +143,7 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types, su
 		      ON v.source_type = f.source_type AND v.source_id = f.source_id
 		)
 		SELECT m.source_type, m.source_id,
-		       coalesce(n.title, ms.subject, ev.title, '') AS title,
+		       coalesce(n.title, ms.subject, ev.title, tk.title, '') AS title,
 		       m.content, m.parent, m.occurred_at, coalesce(n.slug,''),
 		       coalesce(m.vrank, 0), coalesce(m.frank, 0),
 		       coalesce(sj.subs, '{}')
@@ -151,6 +151,7 @@ func (s *Service) Hybrid(ctx context.Context, query string, limit int, types, su
 		  LEFT JOIN notes    n  ON m.source_type='note'    AND n.id  = m.source_id
 		  LEFT JOIN messages ms ON m.source_type='message' AND ms.id = m.source_id
 		  LEFT JOIN events   ev ON m.source_type='event'   AND ev.id = m.source_id
+		  LEFT JOIN tasks    tk ON m.source_type='task'    AND tk.id = m.source_id
 		  LEFT JOIN LATERAL (
 		    SELECT array_agg(ss.slug ORDER BY ss.confidence DESC) AS subs
 		      FROM source_subjects ss

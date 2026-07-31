@@ -35,15 +35,16 @@ func (s *Service) Browse(ctx context.Context, slugs, types []string, limit int) 
 		   WHERE ($1::text[] IS NULL OR slug = ANY($1))
 		)
 		SELECT m.source_type, m.source_id,
-		       coalesce(n.title, ms.subject, ev.title, '') AS title,
-		       left(coalesce(n.body, ms.body_text, ev.notes, ''), 240) AS snippet,
-		       coalesce(n.updated_at, ms.received_at, ev.starts_at) AS at,
+		       coalesce(n.title, ms.subject, ev.title, tk.title, '') AS title,
+		       left(coalesce(n.body, ms.body_text, ev.notes, tk.notes, ''), 240) AS snippet,
+		       coalesce(n.updated_at, ms.received_at, ev.starts_at, tk.due_at, tk.created_at) AS at,
 		       coalesce(n.slug, '') AS slug,
 		       coalesce(sj.subs, '{}') AS subjects
 		  FROM matched m
 		  LEFT JOIN notes    n  ON m.source_type='note'    AND n.id  = m.source_id AND n.deleted_at IS NULL
 		  LEFT JOIN messages ms ON m.source_type='message' AND ms.id = m.source_id
 		  LEFT JOIN events   ev ON m.source_type='event'   AND ev.id = m.source_id AND ev.deleted_at IS NULL
+		  LEFT JOIN tasks    tk ON m.source_type='task'    AND tk.id = m.source_id AND tk.deleted_at IS NULL
 		  LEFT JOIN LATERAL (
 		    SELECT array_agg(ss.slug ORDER BY ss.confidence DESC) AS subs
 		      FROM source_subjects ss
@@ -52,7 +53,7 @@ func (s *Service) Browse(ctx context.Context, slugs, types []string, limit int) 
 		 WHERE ($2::text[] IS NULL OR m.source_type = ANY($2))
 		   -- A deleted note leaves its tags behind; the join makes it a row of
 		   -- nulls rather than dropping it, so it has to be excluded here.
-		   AND coalesce(n.id, ms.id, ev.id) IS NOT NULL
+		   AND coalesce(n.id, ms.id, ev.id, tk.id) IS NOT NULL
 		 ORDER BY at DESC NULLS LAST
 		 LIMIT $3`, nilIfEmpty(slugs), nilIfEmpty(types), limit)
 	if err != nil {

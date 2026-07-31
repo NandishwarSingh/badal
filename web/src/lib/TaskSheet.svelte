@@ -18,6 +18,7 @@
 	// stored UTC instant has to be shifted into the browser's offset and back.
 	let due = $state(toLocalInput(task.due_at));
 	let remind = $state(toLocalInput(firstUnfired(task)));
+	let recur = $state(task.recur_every || '');
 
 	function firstUnfired(t) {
 		const r = (t.reminders || []).find((x) => !x.fired_at);
@@ -96,7 +97,11 @@
 			// A bare date means all-day; a time typed in means it is not.
 			all_day: !dueISO || due.endsWith('T00:00'),
 			version: task.version,
-			remind_at: remind ? [fromLocalInput(remind)] : []
+			remind_at: remind ? [fromLocalInput(remind)] : [],
+			// A repeat has nothing to advance from without a date, and the
+			// server rejects the combination rather than guessing.
+			recur_every: dueISO ? recur : '',
+			recur_interval: 1
 		};
 		try {
 			const res = await Tasks.put(payload);
@@ -159,6 +164,21 @@
 	{#if remind}
 		<p class="muted" style="margin:6px 0 0;font-size:12px">
 			Arrives as a notification even with the app closed.
+		</p>
+	{/if}
+
+	<label class="fieldlabel" for="t-recur">Repeats</label>
+	<div class="seg" id="t-recur">
+		<button class:on={!recur} onclick={() => (recur = '')}>Never</button>
+		<button class:on={recur === 'day'} onclick={() => (recur = 'day')} disabled={!due}>Daily</button>
+		<button class:on={recur === 'week'} onclick={() => (recur = 'week')} disabled={!due}>Weekly</button>
+		<button class:on={recur === 'month'} onclick={() => (recur = 'month')} disabled={!due}>Monthly</button>
+	</div>
+	{#if recur && !due}
+		<p class="muted" style="margin:6px 0 0;font-size:12px">Set a due date to repeat from.</p>
+	{:else if recur}
+		<p class="muted" style="margin:6px 0 0;font-size:12px">
+			Completing it schedules the next one.
 		</p>
 	{/if}
 

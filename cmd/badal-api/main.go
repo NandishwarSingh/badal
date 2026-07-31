@@ -841,7 +841,7 @@ func main() {
 		if state == "" {
 			state = "done"
 		}
-		t, err := taskSvc.SetState(r.Context(), d.ID, id, state)
+		t, err := taskSvc.SetState(r.Context(), d.ID, id, state, tz)
 		if errors.Is(err, tasks.ErrNotFound) {
 			httpx.Err(w, 404, "not_found", "no such task")
 			return
@@ -874,6 +874,37 @@ func main() {
 			return
 		}
 		httpx.JSON(w, 200, map[string]any{"task": t})
+	}))
+
+	// One tap from Review: an extracted deadline becomes something you have
+	// actually committed to, keeping the link back to the mail it came from.
+	//
+	// Hangs off the event, not /v1/tasks/from-event/{id}: that would collide
+	// with /v1/tasks/{id}/state, since ServeMux cannot tell which of the two
+	// is more specific for a path like /v1/tasks/from-event/state.
+	mux.Handle("POST /v1/events/{id}/task", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		t, created, err := taskSvc.FromEvent(r.Context(), d.ID, id)
+		if errors.Is(err, tasks.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "no such event")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "from_event_failed", err.Error())
+			return
+		}
+		// 200 rather than 201 on the second tap, so the client can say
+		// "already on your list" instead of implying it made another.
+		code := 200
+		if created {
+			code = 201
+		}
+		httpx.JSON(w, code, map[string]any{"task": t, "created": created})
 	}))
 
 	mux.Handle("DELETE /v1/tasks/{id}", authed(func(w http.ResponseWriter, r *http.Request) {

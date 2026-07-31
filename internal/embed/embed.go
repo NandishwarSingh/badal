@@ -237,6 +237,11 @@ func (s *Service) Pending(ctx context.Context, limit int) ([]Item, error) {
 		  FROM events v
 		 WHERE v.deleted_at IS NULL
 		   AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.source_type='event' AND e.source_id=v.id)
+		UNION ALL
+		SELECT 'task', k.id, k.title, k.notes, coalesce(k.due_at, k.created_at)
+		  FROM tasks k
+		 WHERE k.deleted_at IS NULL
+		   AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.source_type='task' AND e.source_id=k.id)
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -389,13 +394,14 @@ func (s *Service) Semantic(ctx context.Context, query string, limit int, types, 
 		   ORDER BY source_type, source_id, dist
 		)
 		SELECT b.source_type, b.source_id,
-		       coalesce(n.title, m.subject, v.title, '') AS title,
+		       coalesce(n.title, m.subject, v.title, k.title, '') AS title,
 		       b.content, b.score, b.occurred_at, coalesce(n.slug,''),
 		       coalesce(sj.subs, '{}')
 		  FROM best b
 		  LEFT JOIN notes    n ON b.source_type='note'    AND n.id = b.source_id
 		  LEFT JOIN messages m ON b.source_type='message' AND m.id = b.source_id
 		  LEFT JOIN events   v ON b.source_type='event'   AND v.id = b.source_id
+		  LEFT JOIN tasks    k ON b.source_type='task'    AND k.id = b.source_id
 		  LEFT JOIN LATERAL (
 		    SELECT array_agg(ss.slug ORDER BY ss.confidence DESC) AS subs
 		      FROM source_subjects ss
