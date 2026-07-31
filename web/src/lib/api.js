@@ -188,3 +188,16 @@ export const Subjects = {
   run: (retag = false) =>
     api(`/v1/subjects/run${retag ? "?retag=1" : ""}`, { method: "POST" }),
 };
+
+// Tasks. Ids are generated here so a task written offline already carries the
+// identity the server will store it under.
+export const Tasks = {
+  list: (view = "open") => api(`/v1/tasks?view=${view}`),
+  get: (id) => api(`/v1/tasks/${id}`),
+  put: (task) => api("/v1/tasks", { method: "PUT", body: task }),
+  setState: (id, state) =>
+    api(`/v1/tasks/${id}/state?state=${state}`, { method: "POST" }),
+  snooze: (id, minutes = 10) =>
+    api(`/v1/tasks/${id}/snooze?minutes=${minutes}`, { method: "POST" }),
+  del: (id) => api(`/v1/tasks/${id}`, { method: "DELETE" }),
+};

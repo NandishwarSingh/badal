@@ -1,91 +1,238 @@
 <script>
+	// Now: what needs you today.
+	//
+	// The home surface from docs/DESIGN.md. Tasks are its content, but the point
+	// is the question it answers -- "why did I open this?" -- so everything here
+	// is actionable in place. Ticking a task must not navigate anywhere.
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { isSignedIn } from '$lib/api.js';
+	import { page } from '$app/state';
+	import { Tasks, isSignedIn } from '$lib/api.js';
 	import { authState } from '$lib/auth.js';
-	import { cache } from '$lib/store.js';
-	import { state as sync, run } from '$lib/sync.svelte.js';
+	import { taskCache } from '$lib/store.js';
+	import { state as sync, queueTask, queueTaskDelete } from '$lib/sync.svelte.js';
+	import { toast } from '$lib/toast.svelte.js';
+	import TaskSheet from '$lib/TaskSheet.svelte';
 
-	let notes = $state([]);
+	let view = $state('open'); // open | today | done
+	let tasks = $state([]);
+	let counts = $state({ open: 0, overdue: 0, today: 0, done: 0 });
 	let loading = $state(true);
+	let quick = $state('');
+	let sheet = $state(null);
 
 	async function load() {
-		notes = (await cache.all()).sort((a, b) =>
-			(b.updated_at || '').localeCompare(a.updated_at || '')
-		);
-		loading = false;
+		// Cache first, so the list is on screen before the network answers.
+		const local = await taskCache.all();
+		if (local.length) tasks = sortLocal(local.filter(matchesView));
+		try {
+			const res = await Tasks.list(view);
+			tasks = res.tasks || [];
+			counts = res.counts || counts;
+			await taskCache.replaceAll(res.tasks || []);
+		} catch {
+			// Offline: the cache is already on screen, which is the point.
+		} finally {
+			loading = false;
+		}
 	}
 
-	onMount(async () => {
-		const s = await authState().catch(() => ({ signed_in: false }));
-		if (!s.signed_in && !isSignedIn()) {
+	const matchesView = (t) =>
+		view === 'done' ? t.state !== 'open' : t.state === 'open' && (view !== 'today' || isToday(t));
+
+	function sortLocal(list) {
+		return [...list].sort((a, b) => {
+			if (!a.due_at !== !b.due_at) return a.due_at ? -1 : 1;
+			if (a.due_at && b.due_at) return a.due_at.localeCompare(b.due_at);
+			return (b.priority || 0) - (a.priority || 0);
+		});
+	}
+
+	function isToday(t) {
+		if (!t.due_at) return false;
+		const end = new Date();
+		end.setHours(23, 59, 59, 999);
+		return new Date(t.due_at) <= end;
+	}
+
+	onMount(() => {
+		if (!isSignedIn() && !authState.session) {
 			goto('/settings');
 			return;
 		}
-		await load();
-		await run();
-		await load();
+		load();
+		// A notification's Done button acts inside the service worker, so an
+		// open page has to be told rather than finding out on the next poll.
+		const onMsg = (e) => {
+			if (e.data?.type === 'task-changed') load();
+		};
+		navigator.serviceWorker?.addEventListener('message', onMsg);
+
+		// Deep link from a reminder notification.
+		const id = page.url.searchParams.get('task');
+		if (id) {
+			Tasks.get(id)
+				.then((r) => (sheet = r.task))
+				.catch(() => {});
+		}
+		return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
 	});
 
-	$effect(() => {
-		void sync.lastSync;
-		if (!loading) void load();
-	});
+	function setView(v) {
+		view = v;
+		loading = true;
+		load();
+	}
 
-	const preview = (b) => (b || '').replace(/[#*`[\]]/g, '').slice(0, 140);
-	function when(iso) {
+	// Optimistic: the row changes the moment you tap. The queue makes that
+	// safe -- a failed write is retried, not lost.
+	async function toggle(t) {
+		const next = t.state === 'open' ? 'done' : 'open';
+		tasks = tasks.map((x) => (x.id === t.id ? { ...x, state: next } : x));
+		try {
+			const res = await Tasks.setState(t.id, next);
+			await taskCache.put(res.task);
+			setTimeout(load, 260);
+		} catch {
+			await queueTask({ ...t, state: next, version: undefined });
+			toast(sync.online ? 'Saved when back online' : 'Offline — queued');
+		}
+	}
+
+	async function addQuick() {
+		const title = quick.trim();
+		if (!title) return;
+		quick = '';
+		const t = {
+			id: crypto.randomUUID(),
+			title,
+			notes: '',
+			state: 'open',
+			priority: 0,
+			all_day: true,
+			reminders: []
+		};
+		tasks = [...tasks, t];
+		await queueTask(t);
+		setTimeout(load, 300);
+	}
+
+	function relative(iso) {
 		if (!iso) return '';
-		const d = new Date(iso),
-			m = (Date.now() - d) / 60000;
-		if (m < 1) return 'now';
-		if (m < 60) return `${Math.floor(m)}m`;
-		if (m < 1440) return `${Math.floor(m / 60)}h`;
-		if (m < 10080) return `${Math.floor(m / 1440)}d`;
+		const d = new Date(iso);
+		const now = new Date();
+		const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+		const days = Math.round((day(d) - day(now)) / 86400000);
+		const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+		if (days < -1) return `${-days} days overdue`;
+		if (days === -1) return 'Yesterday';
+		if (days === 0) return `Today ${time}`;
+		if (days === 1) return `Tomorrow ${time}`;
+		if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
 		return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 	}
+
+	const overdue = (t) => t.state === 'open' && t.due_at && new Date(t.due_at) < new Date();
+	const hasReminder = (t) => (t.reminders || []).some((r) => !r.fired_at);
 </script>
 
 <div class="topbar">
-	<h1>Notes</h1>
+	<h1>Now</h1>
 	{#if sync.syncing}<span class="spinner"></span>{/if}
-	{#if sync.pending}<span class="pill warn">{sync.pending}</span>{/if}
+	<span class="spacer"></span>
+	<!-- Settings lives here, not in the tab bar: monthly use should not cost a
+	     fifth of the bar. See docs/DESIGN.md. -->
+	<button
+		class="ghost"
+		onclick={() => goto('/settings')}
+		aria-label="Settings"
+		style="padding:6px 10px"
+	>
+		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7">
+			<circle cx="12" cy="12" r="3.2" />
+			<path d="M12 4v1.6 M12 18.4V20 M4 12h1.6 M18.4 12H20 M6.3 6.3l1.2 1.2 M16.5 16.5l1.2 1.2 M17.7 6.3l-1.2 1.2 M7.5 16.5l-1.2 1.2" />
+		</svg>
+	</button>
 </div>
 
-{#if sync.conflicts}
-	<a class="banner warn" href="/conflicts" style="display:block;text-decoration:none">
-		{sync.conflicts} conflict{sync.conflicts > 1 ? 's' : ''} to review →
-	</a>
+<div class="seg">
+	<button class:on={view === 'open'} onclick={() => setView('open')}>All</button>
+	<button class:on={view === 'today'} onclick={() => setView('today')}>
+		Today{#if counts.overdue}<span class="segbadge">{counts.overdue}</span>{/if}
+	</button>
+	<button class:on={view === 'done'} onclick={() => setView('done')}>Done</button>
+</div>
+
+<form class="quickadd" onsubmit={(e) => (e.preventDefault(), addQuick())}>
+	<input bind:value={quick} placeholder="Add a task…" enterkeyhint="done" aria-label="Add a task" />
+	<button class="primary" type="submit" disabled={!quick.trim()}>Add</button>
+</form>
+
+{#if !sync.online}
+	<div class="banner warn">Offline — changes are queued.</div>
 {/if}
 
-{#if loading}
+{#if loading && tasks.length === 0}
 	<div class="empty">Loading…</div>
-{:else if notes.length === 0}
+{:else if tasks.length === 0}
 	<div class="empty">
-		<p style="font-size:17px;margin-bottom:6px;color:var(--text)">Nothing here yet</p>
-		<p>Tap <strong>Capture</strong> to write your first note.</p>
-	</div>
-{:else}
-	<div class="cards">
-	{#each notes as n, i (n.slug)}
-		<a
-			class="card"
-			class:pending={n._dirty}
-			href="/note/{n.slug}"
-		>
-			<div class="row">
-				<h3>{n.title}</h3>
-				<span class="spacer"></span>
-				{#if n._dirty}<span class="pill">saving</span>{/if}
-			</div>
-			{#if preview(n.body)}<p>{preview(n.body)}</p>{/if}
-			<div class="row" style="margin-top:7px">
-				{#each n.tags || [] as t}<span class="tag">{t}</span>{/each}
-				<span class="spacer"></span>
-				<span class="muted">{when(n.updated_at)}</span>
-			</div>
-		</a>
-	{/each}
+		{#if view === 'done'}
+			Nothing finished yet.
+		{:else if view === 'today'}
+			<p>Nothing due today.</p>
+			<span class="muted">Anything with a date appears here on the day.</span>
+		{:else}
+			<p>No tasks.</p>
+			<span class="muted">Type above to add one, then tap it to set a date and a reminder.</span>
+		{/if}
 	</div>
 {/if}
 
-<button class="fab" onclick={() => goto('/new')} aria-label="New note">+</button>
+<div class="tasklist">
+	{#each tasks as t (t.id)}
+		<div class="taskrow" class:isdone={t.state !== 'open'}>
+			<!-- Ticking is the commonest action on this screen, so it gets the
+			     biggest target and never requires aim. -->
+			<button
+				class="tick"
+				class:on={t.state !== 'open'}
+				aria-label={t.state === 'open' ? 'Mark done' : 'Mark not done'}
+				onclick={() => toggle(t)}
+			>
+				{#if t.state !== 'open'}
+					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3">
+						<path d="M4 12.5l5 5L20 6.5" />
+					</svg>
+				{/if}
+			</button>
+
+			<button class="taskmain" onclick={() => (sheet = t)}>
+				<span class="tasktitle">{t.title}</span>
+				{#if t.due_at || hasReminder(t) || t.priority > 1 || t.subjects?.length}
+					<span class="taskmeta">
+						{#if t.due_at}<span class:overdue={overdue(t)}>{relative(t.due_at)}</span>{/if}
+						{#if hasReminder(t)}<span class="bell" title="Reminder set">◔</span>{/if}
+						{#if t.priority > 1}<span class="prio">!</span>{/if}
+						{#each t.subjects ?? [] as s}<span class="subj">{s}</span>{/each}
+					</span>
+				{/if}
+			</button>
+		</div>
+	{/each}
+</div>
+
+{#if sheet}
+	<TaskSheet
+		task={sheet}
+		onclose={() => (sheet = null)}
+		onsaved={() => {
+			sheet = null;
+			load();
+		}}
+		ondeleted={async (id) => {
+			sheet = null;
+			await queueTaskDelete(id);
+			tasks = tasks.filter((x) => x.id !== id);
+		}}
+	/>
+{/if}

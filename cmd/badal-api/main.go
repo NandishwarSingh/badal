@@ -39,6 +39,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/subjects"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
+	"github.com/NandishwarSingh/badal/internal/tasks"
 	"github.com/NandishwarSingh/badal/internal/vision"
 )
 
@@ -134,6 +135,7 @@ func main() {
 	visSvc := vision.New(os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_VISION_MODEL"))
 	embSvc := embed.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_EMBED_MODEL"))
 	subjSvc := subjects.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_TAG_MODEL"))
+	taskSvc := tasks.New(st.Pool, feed)
 	jobSvc := jobs.New(st.Pool)
 	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
@@ -147,6 +149,16 @@ func main() {
 		slog.Error("push init", "err", err)
 		os.Exit(1)
 	}
+
+	// Reminders. Server-side because the point is to reach a locked phone
+	// with the app closed, which a timer in the page cannot do.
+	go func() {
+		l, err := time.LoadLocation(env("BADAL_TZ", "Asia/Kolkata"))
+		if err != nil {
+			l = time.UTC
+		}
+		taskSvc.RunReminders(ctx, pushSvc, l)
+	}()
 
 	// Daily digest. Local time, because a UTC "today" would report yesterday
 	// evening's events at 06:00 IST.
@@ -761,6 +773,125 @@ func main() {
 		default:
 			httpx.Err(w, 500, "reindex_failed", err.Error())
 		}
+	}))
+
+	// ---------------------------------------------------------------- tasks
+
+	mux.Handle("GET /v1/tasks", authed(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		list, err := taskSvc.List(r.Context(), r.URL.Query().Get("view"), tz, limit)
+		if err != nil {
+			httpx.Err(w, 500, "tasks_failed", err.Error())
+			return
+		}
+		counts, _ := taskSvc.Counts(r.Context(), tz)
+		httpx.JSON(w, 200, map[string]any{"tasks": list, "counts": counts})
+	}))
+
+	mux.Handle("GET /v1/tasks/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		t, err := taskSvc.Get(r.Context(), id)
+		if errors.Is(err, tasks.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "no such task")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "task_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"task": t})
+	}))
+
+	mux.Handle("PUT /v1/tasks", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		var in tasks.PutInput
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		t, err := taskSvc.Put(r.Context(), d.ID, in)
+		switch {
+		case errors.Is(err, tasks.ErrNotFound):
+			httpx.Err(w, 404, "not_found", "no such task")
+		case errors.Is(err, tasks.ErrConflict):
+			// Short and structured: the client re-reads rather than retrying
+			// the same stale write.
+			httpx.Err(w, 409, "version_conflict", "task changed elsewhere; reload")
+		case err != nil:
+			httpx.Err(w, 400, "task_failed", err.Error())
+		default:
+			httpx.JSON(w, 200, map[string]any{"task": t})
+		}
+	}))
+
+	// Ticking a task off. POST rather than PUT because the notification action
+	// has no body to send.
+	mux.Handle("POST /v1/tasks/{id}/state", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		state := r.URL.Query().Get("state")
+		if state == "" {
+			state = "done"
+		}
+		t, err := taskSvc.SetState(r.Context(), d.ID, id, state)
+		if errors.Is(err, tasks.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "no such task")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 400, "state_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"task": t})
+	}))
+
+	mux.Handle("POST /v1/tasks/{id}/snooze", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		mins, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
+		if mins <= 0 || mins > 60*24*14 {
+			mins = 10
+		}
+		t, err := taskSvc.Snooze(r.Context(), d.ID, id, time.Duration(mins)*time.Minute)
+		if errors.Is(err, tasks.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "no such task")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 400, "snooze_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"task": t})
+	}))
+
+	mux.Handle("DELETE /v1/tasks/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		if err := taskSvc.Delete(r.Context(), d.ID, id); err != nil {
+			if errors.Is(err, tasks.ErrNotFound) {
+				httpx.Err(w, 404, "not_found", "no such task")
+				return
+			}
+			httpx.Err(w, 500, "delete_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	// ------------------------------------------------------------- subjects

@@ -1855,3 +1855,179 @@ select {
   align-items: center;
   gap: 8px;
 }
+
+/* Now: tasks ----------------------------------------------------------- */
+
+.quickadd {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.quickadd input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.quickadd button {
+  flex: 0 0 auto;
+  padding: 0 16px;
+}
+
+.tasklist {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 62px;
+}
+
+.taskrow {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-radius: var(--r);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  border: 1px solid var(--edge);
+  box-shadow: var(--rim);
+  overflow: hidden;
+  transition:
+    opacity 0.2s var(--ease),
+    border-color 0.16s var(--ease);
+}
+.taskrow.isdone {
+  opacity: 0.5;
+}
+.taskrow.isdone .tasktitle {
+  text-decoration: line-through;
+  text-decoration-color: var(--dim);
+}
+
+/* The whole left edge is the tick target: it is the commonest action on
+   this screen and should never need aim. */
+.tick {
+  flex: 0 0 auto;
+  width: 52px;
+  min-height: 56px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: transparent;
+}
+.tick::before {
+  content: "";
+  width: 21px;
+  height: 21px;
+  position: absolute;
+  border-radius: 50%;
+  border: 1.8px solid var(--edge-hi);
+  transition:
+    background-color 0.16s var(--ease),
+    border-color 0.16s var(--ease);
+}
+.tick {
+  position: relative;
+}
+.tick svg {
+  position: relative;
+  z-index: 1;
+}
+.tick.on {
+  color: #05070a;
+}
+.tick.on::before {
+  background-color: var(--ok);
+  border-color: var(--ok);
+}
+.tick:active::before {
+  transform: scale(0.9);
+}
+
+.taskmain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 11px 13px 11px 2px;
+  min-height: 56px;
+  justify-content: center;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
+}
+.tasktitle {
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.taskmeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.taskmeta .overdue {
+  color: var(--danger);
+  font-weight: 600;
+}
+.taskmeta .bell {
+  color: var(--accent);
+}
+.taskmeta .prio {
+  color: var(--warn);
+  font-weight: 800;
+}
+
+.segbadge.alt {
+  background: var(--fill-hi);
+  color: var(--muted);
+}
+
+/* Sheet fields */
+.fieldlabel {
+  display: block;
+  margin: 15px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.chips.presets {
+  margin: 0 0 8px;
+  padding: 0 0 2px;
+  overflow-x: auto;
+}
+.chips.presets .chip {
+  min-height: 32px;
+  font-size: 12.5px;
+}
+.sheet input[type="datetime-local"] {
+  width: 100%;
+  /* Safari renders the native picker light unless told otherwise. */
+  color-scheme: dark;
+}
+
+@media (min-width: 900px) {
+  .tasklist {
+    gap: 8px;
+  }
+  .taskrow:hover {
+    border-color: var(--edge-hi);
+  }
+  .chips.presets {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}

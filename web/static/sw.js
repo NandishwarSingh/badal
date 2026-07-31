@@ -62,14 +62,27 @@ self.addEventListener('push', (e) => {
 			body: d.body || '',
 			icon: '/icon-192.png',
 			badge: '/icon-192.png',
-			data: { url: d.url || '/' }
+			tag: d.tag || undefined,
+			// A reminder that cannot be answered from the lock screen has not
+			// really saved you anything.
+			actions: Array.isArray(d.actions) ? d.actions.slice(0, 2) : undefined,
+			data: { url: d.url || '/', ...(d.data || {}) }
 		})
 	);
 });
 
 self.addEventListener('notificationclick', (e) => {
 	e.notification.close();
-	const target = e.notification.data?.url || '/';
+	const data = e.notification.data || {};
+	const target = data.url || '/';
+
+	// Acting on a task from the notification: do it over the network from the
+	// worker and never open a window. Opening the app to tick something off is
+	// the thing the buttons exist to avoid.
+	if (e.action && data.task_id) {
+		e.waitUntil(actOnTask(data.task_id, e.action));
+		return;
+	}
 	e.waitUntil(
 		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
 			for (const c of cs) if ('focus' in c) return c.navigate(target).then(() => c.focus());
@@ -77,3 +90,29 @@ self.addEventListener('notificationclick', (e) => {
 		})
 	);
 });
+
+async function actOnTask(id, action) {
+	const path =
+		action === 'done'
+			? `/v1/tasks/${id}/state?state=done`
+			: `/v1/tasks/${id}/snooze?minutes=10`;
+	try {
+		// Cookie only: the worker has no access to the page's device token, so
+		// this works for a passkey session. It fails quietly otherwise rather
+		// than popping a window the person did not ask for.
+		// self.location.origin, not the page's configured base: a worker cannot
+		// read localStorage. Caddy serves the app and /v1 from one origin, so
+		// these agree in every deployed setup.
+		const res = await fetch(self.location.origin + path, {
+			method: 'POST',
+			credentials: 'include'
+		});
+		if (!res.ok) throw new Error(String(res.status));
+		const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+		for (const c of open) c.postMessage({ type: 'task-changed', id });
+	} catch {
+		// Could not act -- fall back to opening the task so it can be done by
+		// hand, which is better than the button silently doing nothing.
+		await self.clients.openWindow(`/?task=${id}`);
+	}
+}

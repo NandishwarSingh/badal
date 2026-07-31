@@ -117,6 +117,37 @@ type Message struct {
 	Body  string `json:"body"`
 	URL   string `json:"url,omitempty"`
 	Tag   string `json:"tag,omitempty"`
+
+	// Buttons on the notification itself. The point of a reminder is to reach
+	// a locked phone, so the reply to it has to be possible from the lock
+	// screen -- opening the app to tick something off defeats the exercise.
+	Actions []Action `json:"actions,omitempty"`
+	// Opaque payload echoed back by the service worker with whichever action
+	// was pressed.
+	Data map[string]string `json:"data,omitempty"`
+}
+
+type Action struct {
+	Action string `json:"action"`
+	Title  string `json:"title"`
+}
+
+// SendTask is the reminder notification: what it is, when it is due, and the
+// two replies worth making without opening anything.
+func (s *Service) SendTask(ctx context.Context, taskID uuid.UUID, title, body string) (int, error) {
+	return s.Send(ctx, Message{
+		Title: title,
+		Body:  body,
+		URL:   "/?task=" + taskID.String(),
+		// Tagged per task so a re-reminder replaces the old notification
+		// instead of stacking a second copy of the same thing.
+		Tag: "task-" + taskID.String(),
+		Actions: []Action{
+			{Action: "done", Title: "Done"},
+			{Action: "snooze", Title: "Snooze 10m"},
+		},
+		Data: map[string]string{"task_id": taskID.String()},
+	})
 }
 
 // Send delivers to every live subscription. Returns how many succeeded.
