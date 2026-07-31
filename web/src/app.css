@@ -1545,7 +1545,8 @@ select {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-bottom: 3px;
+  /* Sits straight under the search field now that the mode toggle is gone. */
+  margin: 11px 0 3px;
 }
 .chipbar .clear {
   flex: 0 0 auto;

@@ -6,7 +6,6 @@
 	import SubjectChips from '$lib/SubjectChips.svelte';
 
 	let q = $state('');
-	let mode = $state('hybrid'); // semantic | keyword
 	let subs = $state([]);
 	let hits = $state([]);
 	let searched = $state(false);
@@ -17,9 +16,9 @@
 
 	function onInput() {
 		clearTimeout(timer);
-		// Semantic costs an embedding call per query, so wait a little longer
-		// than a local keyword search would.
-		timer = setTimeout(go, mode === 'hybrid' ? 420 : 220);
+		// Every query costs an embedding call and a rerank, so wait until the
+		// typing actually stops.
+		timer = setTimeout(go, 420);
 	}
 
 	async function go() {
@@ -39,7 +38,7 @@
 		if (!sync.online) return offline();
 		busy = true;
 		try {
-			const res = await Search.all(q, mode, 25, subs);
+			const res = await Search.all(q, 'hybrid', 25, subs);
 			hits = res.hits || [];
 		} catch (e) {
 			err = e.message || 'Search failed.';
@@ -81,11 +80,6 @@
 			}));
 	}
 
-	function setMode(m) {
-		mode = m;
-		if (q.trim()) go();
-	}
-
 	// Every result type needs somewhere real to land. Sending mail and events
 	// to a bare /calendar switched the tab and opened nothing, which is most
 	// of the corpus.
@@ -110,7 +104,7 @@
 </script>
 
 <div class="topbar">
-	<h1>Search</h1>
+	<h1>Smart search</h1>
 	{#if busy}<span class="spinner"></span>{/if}
 </div>
 
@@ -118,17 +112,12 @@
 <input
 	bind:value={q}
 	oninput={onInput}
-	placeholder="Search everything…"
+	placeholder="Ask in your own words…"
 	autofocus
 	type="search"
 	enterkeyhint="search"
 	onkeydown={(e) => e.key === 'Enter' && go()}
 />
-
-<div class="seg" style="margin-top:11px">
-	<button class:on={mode === 'hybrid'} onclick={() => setMode('hybrid')}>Smart</button>
-	<button class:on={mode === 'keyword'} onclick={() => setMode('keyword')}>Exact words</button>
-</div>
 
 <SubjectChips bind:selected={subs} onchange={go} />
 
@@ -143,7 +132,7 @@
 			Nothing tagged that yet.
 		{:else}
 			No matches for “{q}”.
-			{#if mode === 'hybrid'}<br /><span class="muted">Try exact words instead.</span>{/if}
+			<br /><span class="muted">Try describing it differently — wording does not have to match.</span>
 		{/if}
 	</div>
 {/if}
