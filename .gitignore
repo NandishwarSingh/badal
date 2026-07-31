@@ -21,3 +21,7 @@ __pycache__/
 web/node_modules/
 web/.svelte-kit/
 web/build/
+
+# stray build output / scratch
+*.class
+First.java
