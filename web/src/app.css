@@ -1575,75 +1575,6 @@ select {
   }
 }
 
-/* Notes: editor and rendered output ----------------------------------- */
-
-.mdtoolbar {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  margin: 9px -15px 8px;
-  padding: 5px 15px;
-  background-color: var(--fill-field);
-  border-top: 1px solid var(--edge);
-  border-bottom: 1px solid var(--edge);
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-.mdtoolbar::-webkit-scrollbar {
-  display: none;
-}
-.mdtoolbar button {
-  flex: 0 0 auto;
-  /* 38px square: below this a thumb hits two buttons at once. */
-  min-width: 38px;
-  min-height: 38px;
-  padding: 0 8px;
-  font-size: 14px;
-  line-height: 1;
-  border: none;
-  border-radius: 9px;
-  background: none;
-  background-image: none;
-  box-shadow: none;
-  color: var(--muted);
-  transition:
-    color 0.14s var(--ease),
-    background-color 0.14s var(--ease);
-}
-.mdtoolbar button:active {
-  background-color: var(--fill-hi);
-  color: var(--text);
-}
-.tsep {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 20px;
-  margin: 0 4px;
-  background: var(--edge);
-}
-
-.editsplit {
-  display: block;
-}
-.editsplit.split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-.editsplit.split .previewpane {
-  max-height: 70vh;
-  overflow-y: auto;
-  padding: 2px 14px 14px;
-  border-radius: var(--r);
-  background-color: var(--fill-field);
-  border: 1px solid var(--edge);
-}
-
 /* Rendered markdown --------------------------------------------------- */
 
 .rendered {
@@ -1855,110 +1786,12 @@ select {
 }
 
 @media (min-width: 900px) {
-  .mdtoolbar {
-    flex-wrap: wrap;
-    overflow-x: visible;
-    margin-left: 0;
-    margin-right: 0;
-    padding-left: 8px;
-    padding-right: 8px;
-    border-radius: var(--r-sm);
-    border: 1px solid var(--edge);
-  }
-  .mdtoolbar button:hover {
-    color: var(--text);
-    background-color: var(--fill-hi);
-  }
   .rendered {
     font-size: 16px;
   }
   .rendered th,
   .rendered td {
     white-space: normal;
-  }
-}
-
-/* Editor: help, status, keyboard-aware toolbar ------------------------ */
-
-.cheat {
-  display: grid;
-  gap: 5px;
-  margin: 0 0 9px;
-  padding: 11px 13px;
-  border-radius: var(--r-sm);
-  background-color: var(--fill-field);
-  border: 1px solid var(--edge);
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.cheat code {
-  font-size: 11.5px;
-  padding: 1px 5px;
-  margin-right: 4px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--edge);
-  color: var(--text);
-  white-space: nowrap;
-}
-.cheat .muted {
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.edstatus {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 7px;
-  font-size: 12px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.edstatus .upl {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-}
-/* The shortcut hint is desktop-only advice; a phone has no ⌘ and no Tab. */
-.kbdhint {
-  display: none;
-}
-
-/* When the software keyboard is up, dock the toolbar just above it. Sticky
-   alone is not enough: the layout viewport does not shrink for the keyboard,
-   so the bar would sit behind it. */
-.mdtoolbar.lifted {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: auto;
-  margin: 0;
-  padding-left: 15px;
-  padding-right: 15px;
-  z-index: 40;
-  border-top: 1px solid var(--edge-hi);
-}
-.mdtoolbar button.on {
-  color: var(--accent);
-}
-
-@media (min-width: 900px) {
-  .cheat {
-    grid-template-columns: 1fr 1fr;
-    column-gap: 18px;
-  }
-  .cheat .muted {
-    grid-column: 1 / -1;
-  }
-  .kbdhint {
-    display: inline;
-  }
-  /* A pointer never raises a software keyboard, so the lift never applies. */
-  .mdtoolbar.lifted {
-    position: sticky;
-    bottom: auto;
   }
 }
 
@@ -2010,4 +1843,15 @@ select {
     width: auto;
     padding: 0 14px;
   }
+}
+
+/* One button, because pasting and dropping already cover the desktop. */
+.addimg {
+  margin-top: 9px;
+  min-height: 40px;
+  padding: 0 15px;
+  font-size: 13.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }

@@ -23,10 +23,6 @@
 	let outlinks = $state([]);
 	let notFound = $state(false);
 	let conflicts = $state([]);
-	// Preview is side-by-side where there is room and a toggle where there is
-	// not. On a phone the keyboard already owns half the screen.
-	let preview = $state(false);
-	let wide = $state(false);
 	let bulkBusy = $state('');
 
 	// Resolve every conflict on this note at once.
@@ -99,16 +95,7 @@
 		}
 	}
 
-	onMount(() => {
-		load();
-		// Side-by-side only where it fits; below that the preview replaces the
-		// editor rather than squeezing both into a phone width.
-		const mq = window.matchMedia('(min-width: 900px)');
-		wide = mq.matches;
-		const on = (e) => (wide = e.matches);
-		mq.addEventListener('change', on);
-		return () => mq.removeEventListener('change', on);
-	});
+	onMount(load);
 	onDestroy(() => {
 		clearTimeout(timer);
 		if (dirty) void save();
@@ -157,16 +144,6 @@
 	<h1>{title || slug}</h1>
 	{#if saving}<span class="pill">saving…</span>
 	{:else if dirty}<span class="pill warn">unsaved</span>{/if}
-	{#if editing}
-		<button
-			class="ghost"
-			class:on={preview}
-			onclick={() => (preview = !preview)}
-			style="padding:6px 10px"
-			aria-pressed={preview}
-			title="Preview">◱</button
-		>
-	{/if}
 	<button class="ghost" onclick={() => (editing = !editing)} style="padding:6px 12px">
 		{editing ? 'Done' : 'Edit'}
 	</button>
@@ -220,16 +197,7 @@
 		oninput={touch}
 		placeholder="tags, comma separated"
 	/>
-	<div class="editsplit" class:split={wide && preview}>
-		<div class="editpane">
-			<Editor bind:value={body} {slug} oninput={touch} />
-		</div>
-		{#if preview}
-			<div class="previewpane">
-				<Rendered {body} />
-			</div>
-		{/if}
-	</div>
+	<Editor bind:value={body} {slug} oninput={touch} />
 	<div class="row" style="margin-top:14px">
 		<button onclick={save} disabled={!dirty}>Save now</button>
 		<span class="spacer"></span>
