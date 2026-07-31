@@ -2,7 +2,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Notes } from '$lib/api.js';
+	import { Notes, api } from '$lib/api.js';
+	import { mergeBoth } from '$lib/diff.js';
 	import Editor from '$lib/Editor.svelte';
 	import Rendered from '$lib/Rendered.svelte';
 	import { cache } from '$lib/store.js';
@@ -26,6 +27,51 @@
 	// not. On a phone the keyboard already owns half the screen.
 	let preview = $state(false);
 	let wide = $state(false);
+	let bulkBusy = $state('');
+
+	// Resolve every conflict on this note at once.
+	//
+	// Sequential, not parallel: each resolution bumps the note's version, so
+	// the next one has to be computed against the note the previous one just
+	// produced. Firing them together would make all but the first stale.
+	async function resolveAll(kind) {
+		bulkBusy = kind;
+		try {
+			let current = note;
+			for (const c of [...conflicts]) {
+				let payload;
+				if (kind === 'mine') payload = { keep: 'current' };
+				else if (kind === 'theirs') payload = { keep: 'incoming' };
+				else
+					payload = {
+						keep: 'custom',
+						title: c.incoming_title || current.title,
+						body: mergeBoth(current.body || '', c.incoming_body || ''),
+						tags: current.tags || []
+					};
+				const res = await api(`/v1/conflicts/${c.id}/resolve`, { method: 'POST', body: payload });
+				current = res.note;
+			}
+			note = current;
+			title = current.title;
+			body = current.body;
+			tagsText = (current.tags || []).join(', ');
+			dirty = false;
+			conflicts = [];
+			await cache.put({ ...current, _dirty: false });
+			toast(
+				kind === 'mine'
+					? 'Kept this version'
+					: kind === 'theirs'
+						? 'Applied their edits'
+						: 'Merged everything'
+			);
+		} catch (e) {
+			err = e.message || 'Could not resolve.';
+		} finally {
+			bulkBusy = '';
+		}
+	}
 
 	let timer;
 
@@ -125,6 +171,25 @@
 		{editing ? 'Done' : 'Edit'}
 	</button>
 </div>
+
+<!-- With more than one conflict, working through the cards one at a time is
+     the tedious path; these settle the whole note in a tap. -->
+{#if conflicts.length > 1}
+	<div class="bulkconf">
+		<span class="bulklabel">{conflicts.length} conflicting edits</span>
+		<div class="bulkbtns">
+			<button onclick={() => resolveAll('mine')} disabled={!!bulkBusy}>
+				{#if bulkBusy === 'mine'}<span class="spinner"></span>{/if} Keep all mine
+			</button>
+			<button onclick={() => resolveAll('theirs')} disabled={!!bulkBusy}>
+				{#if bulkBusy === 'theirs'}<span class="spinner"></span>{/if} Use all theirs
+			</button>
+			<button class="primary" onclick={() => resolveAll('both')} disabled={!!bulkBusy}>
+				{#if bulkBusy === 'both'}<span class="spinner"></span>{/if} Merge all
+			</button>
+		</div>
+	</div>
+{/if}
 
 {#each conflicts as c (c.id)}
 	<ConflictCard

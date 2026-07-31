@@ -1877,3 +1877,137 @@ select {
     white-space: normal;
   }
 }
+
+/* Editor: help, status, keyboard-aware toolbar ------------------------ */
+
+.cheat {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 9px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  background-color: var(--fill-field);
+  border: 1px solid var(--edge);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.cheat code {
+  font-size: 11.5px;
+  padding: 1px 5px;
+  margin-right: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--edge);
+  color: var(--text);
+  white-space: nowrap;
+}
+.cheat .muted {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.edstatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.edstatus .upl {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+/* The shortcut hint is desktop-only advice; a phone has no ⌘ and no Tab. */
+.kbdhint {
+  display: none;
+}
+
+/* When the software keyboard is up, dock the toolbar just above it. Sticky
+   alone is not enough: the layout viewport does not shrink for the keyboard,
+   so the bar would sit behind it. */
+.mdtoolbar.lifted {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: auto;
+  margin: 0;
+  padding-left: 15px;
+  padding-right: 15px;
+  z-index: 40;
+  border-top: 1px solid var(--edge-hi);
+}
+.mdtoolbar button.on {
+  color: var(--accent);
+}
+
+@media (min-width: 900px) {
+  .cheat {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 18px;
+  }
+  .cheat .muted {
+    grid-column: 1 / -1;
+  }
+  .kbdhint {
+    display: inline;
+  }
+  /* A pointer never raises a software keyboard, so the lift never applies. */
+  .mdtoolbar.lifted {
+    position: sticky;
+    bottom: auto;
+  }
+}
+
+/* Resolving every conflict on a note at once -------------------------- */
+
+.bulkconf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 11px;
+  padding: 11px 13px;
+  border-radius: var(--r);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+  border: 1px solid var(--edge);
+  box-shadow: var(--rim);
+}
+.bulklabel {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Stacked and full width on a phone, inline once there is room. Three
+   side-by-side buttons at 360px leaves labels too clipped to read. */
+.bulkbtns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  width: 100%;
+}
+.bulkbtns button {
+  min-height: 40px;
+  font-size: 13.5px;
+  width: 100%;
+}
+
+@media (min-width: 560px) {
+  .bulkconf {
+    flex-wrap: nowrap;
+  }
+  .bulkbtns {
+    grid-template-columns: repeat(3, max-content);
+    justify-content: flex-end;
+    width: auto;
+    margin-left: auto;
+  }
+  .bulkbtns button {
+    width: auto;
+    padding: 0 14px;
+  }
+}

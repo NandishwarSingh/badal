@@ -13,6 +13,36 @@
     ta?.focus();
   }
 
+  let help = $state(false);
+  let kbInset = $state(0);
+
+  // On a phone the software keyboard covers the bottom of the layout but the
+  // page does not shrink, so a bottom-docked toolbar ends up underneath it.
+  // visualViewport reports how much is actually covered; lifting the bar by
+  // that much is the only way it stays reachable while typing.
+  $effect(() => {
+    const vv = typeof window !== "undefined" && window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const covered = window.innerHeight - vv.height - vv.offsetTop;
+      kbInset = covered > 90 ? covered : 0;
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  });
+
+  const words = $derived(
+    (value || "").trim() ? (value || "").trim().split(/\s+/).length : 0,
+  );
+  // 200 wpm is the usual reading-speed figure and is close enough to be
+  // useful for deciding whether a note is a paragraph or an essay.
+  const mins = $derived(Math.max(1, Math.round(words / 200)));
+
 	// Every action is a pure transform of (text, selection), so the same code
 	// serves the toolbar buttons and the keyboard shortcuts.
 	const WRAPS = {
@@ -215,7 +245,13 @@
 
 <!-- Scrolls horizontally on a phone, wraps on a desktop. Same reasoning as the
      subject chips: a touch row needs a scroll affordance, a mouse row does not. -->
-<div class="mdtoolbar" role="toolbar" aria-label="Formatting">
+<div
+  class="mdtoolbar"
+  role="toolbar"
+  aria-label="Formatting"
+  style={kbInset ? `bottom:${kbInset}px` : ""}
+  class:lifted={!!kbInset}
+>
 	<button title="Bold  ⌘B" onclick={wrap('bold')} aria-label="Bold"><b>B</b></button>
 	<button title="Italic  ⌘I" onclick={wrap('italic')} aria-label="Italic"><i>I</i></button>
 	<button title="Strikethrough" onclick={wrap('strike')} aria-label="Strikethrough"><s>S</s></button>
@@ -245,7 +281,29 @@
 	<button title="Image" onclick={() => picker?.click()} aria-label="Insert image">
 		{#if uploading}<span class="spinner"></span>{:else}▣{/if}
 	</button>
+	<span class="tsep"></span>
+	<button
+		title="Markdown help"
+		class:on={help}
+		aria-pressed={help}
+		onclick={() => (help = !help)}
+		aria-label="Markdown help">?</button
+	>
 </div>
+
+{#if help}
+	<div class="cheat">
+		<div><code>**bold**</code> <code>*italic*</code> <code>~~strike~~</code></div>
+		<div><code># Heading</code> <code>&gt; quote</code> <code>---</code></div>
+		<div><code>- item</code> <code>1. item</code> <code>- [ ] task</code></div>
+		<div><code>`code`</code> <code>```go</code> fenced block</div>
+		<div><code>[text](url)</code> <code>[[Another note]]</code></div>
+		<div><code>| a | b |</code> then <code>| --- | --- |</code></div>
+		<div><code>$x^2$</code> maths, <code>$$…$$</code> block</div>
+		<div><code>```mermaid</code> flowchart, sequence, pie…</div>
+		<div class="muted">Two spaces indent a nested list. Paste or drop an image to upload it.</div>
+	</div>
+{/if}
 
 <input
 	bind:this={picker}
@@ -271,8 +329,15 @@
 	placeholder={'Write in markdown.\n\n# Heading   **bold**   - list   > quote\n[[Link another note]]\n$e^{i\\pi}+1=0$ for maths\nA ```mermaid block for a flowchart\nPaste or drop an image straight in'}
 ></textarea>
 
-{#if uploading}
-	<div class="muted" style="margin-top:6px">
-		Uploading {uploading} image{uploading > 1 ? 's' : ''}…
-	</div>
-{/if}
+<div class="edstatus">
+	{#if uploading}
+		<span class="upl">
+			<span class="spinner"></span> Uploading {uploading} image{uploading > 1 ? 's' : ''}…
+		</span>
+	{:else}
+		<span>{words} word{words === 1 ? '' : 's'}</span>
+		{#if words > 60}<span>· {mins} min read</span>{/if}
+	{/if}
+	<span class="spacer"></span>
+	<span class="kbdhint">⌘B ⌘I ⌘K · Tab indents</span>
+</div>

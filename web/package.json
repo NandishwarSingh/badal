@@ -7,7 +7,7 @@
     "build": "vite build && node scripts-stamp.mjs",
     "preview": "vite preview",
     "check:render": "node scripts/rendercheck.mjs",
-    "test": "node tests/markdown.test.mjs"
+    "test": "node tests/markdown.test.mjs && node tests/diff.test.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",
