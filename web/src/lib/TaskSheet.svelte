@@ -1,5 +1,6 @@
 <script>
 	import { Tasks } from '$lib/api.js';
+	import Rendered from '$lib/Rendered.svelte';
 	import { taskCache } from '$lib/store.js';
 	import { queueTask } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
@@ -17,13 +18,13 @@
 	// <input type="datetime-local"> wants local wall time with no zone, so the
 	// stored UTC instant has to be shifted into the browser's offset and back.
 	let due = $state(toLocalInput(task.due_at));
-	let remind = $state(toLocalInput(firstUnfired(task)));
+	// A list, not one value. "A day before and again an hour before" is the
+	// normal case and the reason reminders are their own table.
+	let reminders = $state(
+		(task.reminders || []).filter((r) => !r.fired_at).map((r) => toLocalInput(r.fire_at))
+	);
+	let editingNotes = $state(!(task.notes || '').trim());
 	let recur = $state(task.recur_every || '');
-
-	function firstUnfired(t) {
-		const r = (t.reminders || []).find((x) => !x.fired_at);
-		return r?.fire_at || null;
-	}
 
 	function toLocalInput(iso) {
 		if (!iso) return '';
@@ -68,15 +69,27 @@
 		due = toLocalInput(d.toISOString());
 	}
 
-	function setRemind(mins) {
-		if (mins === null) {
-			remind = '';
-			return;
-		}
-		// Relative to the due date when there is one -- "an hour before" is
-		// what people mean -- and to now when there is not.
+	// Relative to the due date -- "an hour before" is what people mean.
+	function addRemind(mins) {
 		const base = due ? new Date(due) : new Date();
-		remind = toLocalInput(new Date(base.getTime() - mins * 60000).toISOString());
+		const at = toLocalInput(new Date(base.getTime() - mins * 60000).toISOString());
+		if (!reminders.includes(at)) reminders = [...reminders, at].sort();
+	}
+	const dropRemind = (i) => (reminders = reminders.filter((_, n) => n !== i));
+
+	// Snoozing from inside the app, for when the notification was missed
+	// rather than acted on.
+	async function snooze(mins) {
+		busy = true;
+		try {
+			const res = await Tasks.snooze(task.id, mins);
+			await taskCache.put(res.task);
+			toast(mins >= 1440 ? 'Snoozed to tomorrow' : `Snoozed ${mins}m`);
+			onsaved?.(res.task);
+		} catch (e) {
+			err = e.message || 'Could not snooze.';
+			busy = false;
+		}
 	}
 
 	async function save() {
@@ -97,7 +110,7 @@
 			// A bare date means all-day; a time typed in means it is not.
 			all_day: !dueISO || due.endsWith('T00:00'),
 			version: task.version,
-			remind_at: remind ? [fromLocalInput(remind)] : [],
+			remind_at: reminders.filter(Boolean).map(fromLocalInput),
 			// A repeat has nothing to advance from without a date, and the
 			// server rejects the combination rather than guessing.
 			recur_every: dueISO ? recur : '',
@@ -155,16 +168,34 @@
 
 	<label class="fieldlabel" for="t-remind">Remind me</label>
 	<div class="chips presets">
-		<button class="chip" onclick={() => setRemind(0)} disabled={!due}>At the time</button>
-		<button class="chip" onclick={() => setRemind(60)} disabled={!due}>1h before</button>
-		<button class="chip" onclick={() => setRemind(1440)} disabled={!due}>1 day before</button>
-		<button class="chip" class:on={!remind} onclick={() => setRemind(null)}>None</button>
+		<button class="chip" onclick={() => addRemind(0)} disabled={!due}>At the time</button>
+		<button class="chip" onclick={() => addRemind(60)} disabled={!due}>1h before</button>
+		<button class="chip" onclick={() => addRemind(1440)} disabled={!due}>1 day before</button>
+		<button class="chip" onclick={() => (reminders = [...reminders, ''])}>Pick…</button>
 	</div>
-	<input id="t-remind" type="datetime-local" bind:value={remind} />
-	{#if remind}
+
+	{#each reminders as _, i}
+		<div class="remrow">
+			<input type="datetime-local" bind:value={reminders[i]} />
+			<button class="ghost" aria-label="Remove reminder" onclick={() => dropRemind(i)}>✕</button>
+		</div>
+	{/each}
+
+	{#if reminders.length}
 		<p class="muted" style="margin:6px 0 0;font-size:12px">
-			Arrives as a notification even with the app closed.
+			{reminders.length} reminder{reminders.length > 1 ? 's' : ''} — they arrive even with the app
+			closed.
 		</p>
+	{:else}
+		<p class="muted" style="margin:2px 0 0;font-size:12px">No reminders.</p>
+	{/if}
+
+	{#if task.id && (task.reminders || []).length}
+		<div class="chips presets" style="margin-top:9px">
+			<button class="chip" onclick={() => snooze(10)} disabled={busy}>Snooze 10m</button>
+			<button class="chip" onclick={() => snooze(60)} disabled={busy}>1 hour</button>
+			<button class="chip" onclick={() => snooze(1440)} disabled={busy}>Tomorrow</button>
+		</div>
 	{/if}
 
 	<label class="fieldlabel" for="t-recur">Repeats</label>
@@ -190,7 +221,20 @@
 	</div>
 
 	<label class="fieldlabel" for="t-notes">Notes</label>
-	<textarea id="t-notes" bind:value={notes} rows="4" placeholder="Anything else"></textarea>
+	{#if editingNotes}
+		<textarea
+			id="t-notes"
+			bind:value={notes}
+			rows="4"
+			placeholder="Markdown works — lists, links, even maths"
+		></textarea>
+	{:else}
+		<!-- Notes are read far more often than written, so the rendered form is
+		     the default and the textarea is one tap away. -->
+		<button class="notesview" onclick={() => (editingNotes = true)} aria-label="Edit notes">
+			<Rendered body={notes} />
+		</button>
+	{/if}
 
 	{#if err}<div class="banner err" style="margin-top:10px">{err}</div>{/if}
 

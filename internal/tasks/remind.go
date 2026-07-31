@@ -35,6 +35,13 @@ type Pusher interface {
 	SendTask(ctx context.Context, taskID uuid.UUID, title, body string) (int, error)
 }
 
+// Recorder writes the in-app copy. Separate from Pusher because the record has
+// to survive push failing, which is the case that matters: a subscription can
+// expire silently and the only symptom is notifications quietly stopping.
+type Recorder interface {
+	AddTask(ctx context.Context, kind, title, body, url string, taskID uuid.UUID, dedupe string) error
+}
+
 type due struct {
 	reminderID uuid.UUID
 	taskID     uuid.UUID
@@ -44,7 +51,7 @@ type due struct {
 }
 
 // RunReminders sweeps until the context is cancelled.
-func (s *Service) RunReminders(ctx context.Context, p Pusher, loc *time.Location) {
+func (s *Service) RunReminders(ctx context.Context, p Pusher, rec Recorder, loc *time.Location) {
 	t := time.NewTicker(sweepEvery)
 	defer t.Stop()
 	for {
@@ -52,7 +59,7 @@ func (s *Service) RunReminders(ctx context.Context, p Pusher, loc *time.Location
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if n, err := s.sweep(ctx, p, loc); err != nil {
+			if n, err := s.sweep(ctx, p, rec, loc); err != nil {
 				slog.Warn("reminder sweep", "err", err)
 			} else if n > 0 {
 				slog.Info("reminders sent", "count", n)
@@ -61,7 +68,7 @@ func (s *Service) RunReminders(ctx context.Context, p Pusher, loc *time.Location
 	}
 }
 
-func (s *Service) sweep(ctx context.Context, p Pusher, loc *time.Location) (int, error) {
+func (s *Service) sweep(ctx context.Context, p Pusher, rec Recorder, loc *time.Location) (int, error) {
 	// Claim and mark in one statement. Two servers, or a restart mid-sweep,
 	// cannot then send the same reminder twice.
 	rows, err := s.pool.Query(ctx, `
@@ -116,9 +123,19 @@ func (s *Service) sweep(ctx context.Context, p Pusher, loc *time.Location) (int,
 			slog.Info("reminder skipped as stale", "task", d.taskID, "late", time.Since(d.fireAt))
 			continue
 		}
-		if _, err := p.SendTask(ctx, d.taskID, d.title, dueLine(d.dueAt, loc)); err != nil {
-			// Already marked fired, so this is not retried. Losing one
-			// notification beats a loop that sends it every 30 seconds.
+		body := dueLine(d.dueAt, loc)
+		// Record first. If the push fails the reminder is still waiting in the
+		// app, which is the whole reason both exist.
+		if rec != nil {
+			if err := rec.AddTask(ctx, "reminder", d.title, body,
+				"/?task="+d.taskID.String(), d.taskID, "task:"+d.taskID.String()); err != nil {
+				slog.Warn("reminder record", "task", d.taskID, "err", err)
+			}
+		}
+		if _, err := p.SendTask(ctx, d.taskID, d.title, body); err != nil {
+			// Already marked fired, so this is not retried. Losing one push
+			// beats a loop that sends it every 30 seconds -- and the in-app
+			// copy above means it is not actually lost.
 			slog.Warn("reminder push", "task", d.taskID, "err", err)
 			continue
 		}

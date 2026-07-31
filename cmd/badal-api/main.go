@@ -30,6 +30,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/jobs"
 	"github.com/NandishwarSingh/badal/internal/mail"
 	"github.com/NandishwarSingh/badal/internal/notes"
+	"github.com/NandishwarSingh/badal/internal/notify"
 	"github.com/NandishwarSingh/badal/internal/objects"
 	"github.com/NandishwarSingh/badal/internal/passkey"
 	"github.com/NandishwarSingh/badal/internal/push"
@@ -136,6 +137,7 @@ func main() {
 	embSvc := embed.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_EMBED_MODEL"))
 	subjSvc := subjects.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_TAG_MODEL"))
 	taskSvc := tasks.New(st.Pool, feed)
+	notifySvc := notify.New(st.Pool)
 	jobSvc := jobs.New(st.Pool)
 	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
@@ -157,7 +159,7 @@ func main() {
 		if err != nil {
 			l = time.UTC
 		}
-		taskSvc.RunReminders(ctx, pushSvc, l)
+		taskSvc.RunReminders(ctx, pushSvc, notifySvc, l)
 	}()
 
 	// Daily digest. Local time, because a UTC "today" would report yesterday
@@ -773,6 +775,55 @@ func main() {
 		default:
 			httpx.Err(w, 500, "reindex_failed", err.Error())
 		}
+	}))
+
+	// ------------------------------------------------------- notifications
+
+	mux.Handle("GET /v1/notifications", authed(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		list, unread, err := notifySvc.List(r.Context(), limit)
+		if err != nil {
+			httpx.Err(w, 500, "notifications_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"notifications": list, "unread": unread})
+	}))
+
+	// Cheap enough to poll: one indexed count, no joins.
+	mux.Handle("GET /v1/notifications/unread", authed(func(w http.ResponseWriter, r *http.Request) {
+		n, err := notifySvc.Unread(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "unread_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"unread": n})
+	}))
+
+	// No id marks the lot, which is what opening the list does.
+	mux.Handle("POST /v1/notifications/read", authed(func(w http.ResponseWriter, r *http.Request) {
+		var id *uuid.UUID
+		if v := r.URL.Query().Get("id"); v != "" {
+			parsed, err := uuid.Parse(v)
+			if err != nil {
+				httpx.Err(w, 400, "bad_request", "invalid id")
+				return
+			}
+			id = &parsed
+		}
+		if err := notifySvc.MarkRead(r.Context(), id); err != nil {
+			httpx.Err(w, 500, "read_failed", err.Error())
+			return
+		}
+		n, _ := notifySvc.Unread(r.Context())
+		httpx.JSON(w, 200, map[string]any{"unread": n})
+	}))
+
+	mux.Handle("DELETE /v1/notifications", authed(func(w http.ResponseWriter, r *http.Request) {
+		if err := notifySvc.Clear(r.Context()); err != nil {
+			httpx.Err(w, 500, "clear_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	// ---------------------------------------------------------------- tasks

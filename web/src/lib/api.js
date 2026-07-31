@@ -201,3 +201,13 @@ export const Tasks = {
     api(`/v1/tasks/${id}/snooze?minutes=${minutes}`, { method: "POST" }),
   del: (id) => api(`/v1/tasks/${id}`, { method: "DELETE" }),
 };
+
+// In-app activity. Sits beside Web Push: the record survives a dismissed
+// banner, a denied permission, or an expired subscription.
+export const Notifications = {
+  list: (limit = 50) => api(`/v1/notifications?limit=${limit}`),
+  unread: () => api("/v1/notifications/unread"),
+  read: (id) =>
+    api(`/v1/notifications/read${id ? `?id=${id}` : ""}`, { method: "POST" }),
+  clear: () => api("/v1/notifications", { method: "DELETE" }),
+};

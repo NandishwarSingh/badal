@@ -7,12 +7,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Tasks, isSignedIn } from '$lib/api.js';
+	import { Tasks, Notifications, isSignedIn } from '$lib/api.js';
 	import { authState } from '$lib/auth.js';
 	import { taskCache } from '$lib/store.js';
 	import { state as sync, queueTask, queueTaskDelete } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import TaskSheet from '$lib/TaskSheet.svelte';
+	import ActivitySheet from '$lib/ActivitySheet.svelte';
 
 	let view = $state('open'); // open | today | done
 	let tasks = $state([]);
@@ -20,6 +21,25 @@
 	let loading = $state(true);
 	let quick = $state('');
 	let sheet = $state(null);
+	let unread = $state(0);
+	let activity = $state(null);
+
+	async function refreshUnread() {
+		try {
+			unread = (await Notifications.unread()).unread || 0;
+		} catch {
+			// Offline: leave the last known count rather than showing zero,
+			// which would read as "nothing happened".
+		}
+	}
+
+	async function openActivity() {
+		try {
+			activity = (await Notifications.list()).notifications || [];
+		} catch {
+			activity = [];
+		}
+	}
 
 	async function load() {
 		// Cache first, so the list is on screen before the network answers.
@@ -61,6 +81,18 @@
 			return;
 		}
 		load();
+		refreshUnread();
+		// Poll rather than hold a socket open: one indexed count every couple
+		// of minutes costs nothing, and a reminder that fires while the app is
+		// open should not wait for a manual refresh.
+		const tick = setInterval(refreshUnread, 120000);
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') {
+				refreshUnread();
+				load();
+			}
+		};
+		document.addEventListener('visibilitychange', onVisible);
 		// A notification's Done button acts inside the service worker, so an
 		// open page has to be told rather than finding out on the next poll.
 		const onMsg = (e) => {
@@ -75,7 +107,11 @@
 				.then((r) => (sheet = r.task))
 				.catch(() => {});
 		}
-		return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
+		return () => {
+			clearInterval(tick);
+			document.removeEventListener('visibilitychange', onVisible);
+			navigator.serviceWorker?.removeEventListener('message', onMsg);
+		};
 	});
 
 	function setView(v) {
@@ -140,6 +176,16 @@
 	<h1>Now</h1>
 	{#if sync.syncing}<span class="spinner"></span>{/if}
 	<span class="spacer"></span>
+	<!-- Activity: the in-app record of what fired. A push can be dismissed or
+	     never arrive at all, so the count is the thing that is actually true. -->
+	<button class="ghost bell" onclick={openActivity} aria-label="Activity" style="padding:6px 10px">
+		<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+			stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M18 8.5a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5" />
+			<path d="M10.5 19a2 2 0 0 0 3 0" />
+		</svg>
+		{#if unread > 0}<span class="belldot">{unread > 9 ? '9+' : unread}</span>{/if}
+	</button>
 	<!-- Settings lives here, not in the tab bar: monthly use should not cost a
 	     fifth of the bar. See docs/DESIGN.md. -->
 	<button
@@ -230,6 +276,14 @@
 		</div>
 	{/each}
 </div>
+
+{#if activity}
+	<ActivitySheet
+		items={activity}
+		onclose={() => (activity = null)}
+		onchanged={refreshUnread}
+	/>
+{/if}
 
 {#if sheet}
 	<TaskSheet

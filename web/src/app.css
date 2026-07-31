@@ -2036,3 +2036,122 @@ select {
 .taskmeta .rep {
   color: var(--muted);
 }
+
+/* Activity ------------------------------------------------------------ */
+
+.bell {
+  position: relative;
+}
+.belldot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #1a0606;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  /* A ring in the bar's own black, so the badge reads as sitting on top of
+	   the icon rather than merging into it. */
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.actlist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.actrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 12px;
+  text-align: left;
+  border-radius: var(--r-sm);
+  background-color: var(--fill-field);
+  border: 1px solid var(--edge);
+  box-shadow: none;
+  color: var(--text);
+}
+/* Unread is a left edge, not a colour wash: it survives at a glance and does
+   not fight the pitch black. */
+.actrow.unseen {
+  border-left: 2px solid var(--accent);
+  background-color: var(--fill);
+  background-image: var(--sheen);
+}
+.acticon {
+  flex: 0 0 auto;
+  width: 22px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.4;
+}
+.actrow.unseen .acticon {
+  color: var(--accent);
+}
+.actbody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.acttitle {
+  font-size: 14.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.actsub {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.actwhen {
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+/* Reminder rows in the task sheet */
+.remrow {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.remrow input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.remrow .ghost {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+/* Rendered task notes, tappable to edit */
+.notesview {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  background-color: var(--fill-field);
+  border: 1px solid var(--edge);
+  box-shadow: none;
+  color: var(--text);
+}
+.notesview .rendered {
+  font-size: 14.5px;
+}
+.notesview .rendered > *:last-child {
+  margin-bottom: 0;
+}
