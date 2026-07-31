@@ -263,7 +263,7 @@ missing chunks). WebDAV is a second protocol over the same manifests, not a seco
 
 ---
 
-## 9. Operations (as built — Phase 0 complete)
+## 9. Operations (as built)
 
 ### badal-core
 
@@ -321,49 +321,30 @@ cable brings back a 12-thread node and a 300 GB archive.**
 
 ---
 
-## 10. Roadmap (your ordering)
+## 10. What is left
 
-| # | Phase | Est. | Depends on | Done when |
-|---|---|---|---|---|
-| **0** | Foundation | — | — | ✅ **complete** |
-| **1** | **Spine** — Go API, auth/devices, `change_log`, FastCDC blobs, `badal` CLI | 3 wk | 0 | `badal push`/`pull` from the terminal |
-| **2** | **Notes + PWA** — SurrealDB, note graph, SvelteKit PWA, offline, Web Push, quick capture | 5 wk | 1 | **You use it daily** |
-| **3** | **Email → Calendar** — Gmail ingest, extraction + evidence validation, review inbox, `.ics` | 5 wk | 2 | Apple Calendar shows VIT deadlines you confirmed |
-| **4** | **Worker** — job queue, lease/heartbeat/reaper, launchd agent, caffeinate, thermal backoff | 2 wk | 1 | Close the lid mid-job → it still completes |
-| **5** | **Knowledge layer** — image→note, audio→note with VAD, chat-with-notes, hybrid search | 7 wk | 2, 4 | Photograph a whiteboard, get a linked structured note |
-| **6** | **Files** — WebDAV, chunked sync, eviction to the Mac archive, cold-read restore | 4 wk | 1, 4 | Finder mounts badal; a 90-day-old file restores on demand |
-| **7** | **Beyond** — §11 | — | — | — |
+The phase framing is retired. Phases bundled unrelated work behind one date and
+hid what was actually finishable, so the running order now lives as a flat list
+in **`docs/FEATURES.md`** — one feature per row, built one at a time, each with
+how you check it.
 
-**Total to a genuinely useful system: ~22 weeks.** Phase 2 is the one that decides whether
-this survives — if it is not in daily use by then, everything before it is plumbing you
-cannot feel.
+What the phases were worth keeping is the ordering argument, which survives in
+that file: finish what is half-built, make the corpus feel like one thing, then
+chat, then capture, then files.
 
-Phase 4 shrank from 3 weeks to 2: the systemd watchdogs, lid/power handling, WiFi recovery
-and thermal caps all died with the laptop. launchd needs none of it.
+Phases 0 through 4 are complete and their design is documented below and in
+§16. Read this file for *how it works*; read `FEATURES.md` for *what is next*.
 
 ---
 
-## 11. Suggested next features, ranked by value-to-effort
+## 11. Deliberately out of scope
 
-1. **Daily digest** — one morning push: today's events, week's deadlines, mail needing
-   action, notes you touched. Ties everything together and makes it feel like *yours*.
-2. **Web clipper** — browser extension → page as markdown into the graph. Trivial once
-   notes exist.
-3. **Auto-linking** — on note save, embed and suggest the 5 nearest existing notes.
-   Builds the graph without manual `[[links]]`, which nobody sustains.
-4. **Entity extraction → graph nodes** — people, courses, deadlines become first-class
-   nodes. "Show everything about Prof. X" starts working.
-5. **Timeline view** — every note, email and capture on one scrubable axis.
-6. **Templates + recurring notes** — daily journal, lecture notes, meeting notes.
-7. **Public share links** — signed, expiring, single note or folder.
-8. **Import** — Notion/Obsidian/Apple Notes ingestion, so the graph starts populated.
-9. **Voice command capture** — hold a button in the PWA, speak, it becomes a routed note
-   or a calendar event. Uses the whole Phase 5 pipeline.
-10. **Local LLM option** — 16 GB unified runs 8–14B models. Route privacy-sensitive
-    extraction to the Mac and keep OpenRouter for the rest.
+Media server (Jellyfin), password manager (Bitwarden), home automation,
+multi-user. Each is its own project, and each would pull the VPS past the
+memory budget in §4.
 
-Deliberately out of scope: media server (Jellyfin), password manager (Bitwarden), home
-automation, multi-user. Each is its own project.
+The ranked wish-list that used to live here is folded into
+`docs/FEATURES.md`; keeping two lists meant neither was trusted.
 
 ---
 
@@ -380,7 +361,7 @@ automation, multi-user. Each is its own project.
 
 ---
 
-## 16. Phase 5 expanded — the knowledge layer
+## 16. The knowledge layer — design notes
 
 Revised 2026-07-30. Everything needed is already installed: ffmpeg, whisper-cli,
 ollama (`qwen3.5:4b`), pgvector 0.8.5, SurrealDB HNSW, Apple Vision, and the
@@ -517,33 +498,10 @@ needs pulling on first run.
 
 ---
 
-## 17. Delivery slices
+## 17. Retrieval, as measured
 
-Working agreement: one slice at a time — build, test, ship, you verify, next.
-Every slice names what *you* check, because "the API returns 200" has already
-proved a poor proxy for "it works". Sizes: **S** under half a day, **M** about a
-day, **L** two to three days.
-
-### 5A · Retrieval
-
-Ordered so the first slice is visible. Chunking and indexing produce nothing to
-look at, so semantic search comes first and the plumbing is hardened behind it.
-
-| | Slice | You verify | |
-|---|---|---|---|
-| A1 | Embeddings + semantic search toggle | Search "internship money" finds the Arqgene mail that never uses those words | M |
-| A2 | Hybrid retrieval, RRF, cross-encoder rerank | Same queries, better ordering; I show before/after rankings | M |
-| A3 | Structure-aware chunking + small-to-big | ✅ Long emails return the right paragraph, not the whole thread | M |
-| A4 | Subjects — auto-tagged taxonomy | Mail and events tagged by course/club; filter by subject | M |
-| A5 | Scale hardening + eval harness | ✅ Numbers, not feel — recall and latency before/after | L |
-
-Two items from A5's original scope — **partial indexes** and **incremental HNSW
-build tuning** — are deferred into A4 rather than done. Both concern *filtered*
-vector search: pgvector fetches N neighbours and filters afterwards, so a narrow
-filter can come back near-empty while matches exist. At 400 chunks the planner
-still runs an exact sequential scan, so there is nothing to measure yet. Subject
-filtering is what makes narrow filters common, so they land with A4 and the eval
-harness decides whether they earn their keep.
+The slice tables that were here are superseded by `docs/FEATURES.md`. What is
+worth keeping is the evidence, because it reversed two decisions.
 
 #### What A3 + A5 measured
 
@@ -586,55 +544,4 @@ Cost of the default: p50 rises from ~450ms to ~950ms, one extra network round
 trip to the reranker. Reranking failure is non-fatal and falls back to fused
 order.
 
-### 5B · Conversation
-
-| | Slice | You verify | |
-|---|---|---|---|
-| B1 | Streaming chat with citations | Ask "when is the open project due" and get an answer with a tappable source | M |
-| B2 | Query rewriting + turn memory | "And who do I email about it" works as a follow-up | S |
-| B3 | Voice in (whisper-cli, chunked) | Speak a question, see it transcribed and answered | M |
-| B4 | Voice out (`say`) + barge-in | It talks back; speaking cuts it off mid-sentence | M |
-| B5 | Fish Audio as opt-in voice | Better timbre, and you decide if the added latency is worth it | L |
-
-### 5C · Capture
-
-| | Slice | You verify | |
-|---|---|---|---|
-| C1 | PWA recorder + upload | Record 30s on your phone, see it appear | M |
-| C2 | VAD + Whisper on the worker | A recording with long silences transcribes without invented text | L |
-| C3 | Transcript → structured note | Title, summary and action items, not a wall of text | M |
-| C4 | Image → structured note | Photograph a whiteboard, get usable markdown | M |
-| C5 | Reminders: schema + scheduled push | Set one for 5 minutes out, phone buzzes | M |
-| C6 | Reminder from a photo | Photograph a poster, get a reminder with the image attached | M |
-| C7 | Reminder by voice | "Remind me to submit the form Friday" | S |
-| C8 | Lecture mode | A 90-minute recording becomes sectioned notes with jumpable timestamps | L |
-
-### 5D · Graph
-
-| | Slice | You verify | |
-|---|---|---|---|
-| D1 | Auto-linking on save | Writing a note surfaces five genuinely related ones | M |
-| D2 | Entities as graph nodes | "Everything about Prof X" spans mail, events and notes | L |
-| D3 | Related-on-open | Opening any note shows what it sits near | S |
-| D4 | Smart collections over subjects | "Internship deadlines" stays populated as mail arrives | M |
-
-### 6 · Files
-
-| | Slice | You verify | |
-|---|---|---|---|
-| F1 | File browser: upload, list, download | Upload from your phone, download on the Mac | M |
-| F2 | Photos: thumbnails, grid, albums | A photo grid that loads fast on a phone | M |
-| F3 | WebDAV | Finder mounts badal as a drive | M |
-| F4 | Sharing: signed expiring links | Send someone a link that dies on schedule | M |
-| F5 | Organising: folders, tags, search over files | Find a file by name, tag or content | M |
-| F6 | Eviction to the Mac archive + cold restore | A 90-day-old file restores on demand | L |
-
-### Carried forward
-
-| | Item | Owner |
-|---|---|---|
-| R1 | Install the power daemon | **you** — one sudo command |
-| R2 | Decide the second blob copy: wire the Fedora laptop, or cloud archive | **you** |
-| R3 | Pull a Whisper model (`small.en`, ~500MB) | me, before C2 |
-| R4 | Revive badal-forge (ethernet) — optional, unlocks 300GB archive | **you** |
-| R5 | Tune the extraction prompt against wrong events in your calendar | needs your review |
+Carried-forward items now live in `docs/FEATURES.md` under "Yours, not mine".
