@@ -7,8 +7,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Tasks, Notifications, isSignedIn } from '$lib/api.js';
-	import { authState } from '$lib/auth.js';
+	import { Tasks, Notifications } from '$lib/api.js';
 	import { taskCache } from '$lib/store.js';
 	import { state as sync, queueTask, queueTaskDelete } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
@@ -50,7 +49,11 @@
 			tasks = res.tasks || [];
 			counts = res.counts || counts;
 			await taskCache.replaceAll(res.tasks || []);
-		} catch {
+		} catch (e) {
+			if (e?.status === 401) {
+				goto('/settings');
+				return;
+			}
 			// Offline: the cache is already on screen, which is the point.
 		} finally {
 			loading = false;
@@ -76,10 +79,11 @@
 	}
 
 	onMount(() => {
-		if (!isSignedIn() && !authState.session) {
-			goto('/settings');
-			return;
-		}
+		// authState is an async function, so `authState.session` was always
+		// undefined and this collapsed to "is there a device token in
+		// localStorage" -- which bounced every passkey session straight to
+		// Settings. The server's answer is the only authoritative one, so
+		// load() decides: a 401 redirects, anything else does not.
 		load();
 		refreshUnread();
 		// Poll rather than hold a socket open: one indexed count every couple

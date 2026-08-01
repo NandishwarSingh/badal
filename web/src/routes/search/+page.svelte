@@ -14,6 +14,44 @@
 	let err = $state('');
 	let timer;
 
+	// Recent searches, kept locally. An empty search screen is a dead end --
+	// this is the one list that is always relevant before you have typed, and
+	// re-running a past query is the commonest thing you do here.
+	const HIST_KEY = 'badal.searches';
+	let history = $state([]);
+
+	function loadHistory() {
+		try {
+			history = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+		} catch {
+			history = [];
+		}
+	}
+
+	function remember(term) {
+		const t = term.trim();
+		if (t.length < 2) return;
+		history = [t, ...history.filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, 8);
+		try {
+			localStorage.setItem(HIST_KEY, JSON.stringify(history));
+		} catch {
+			// Private mode, or the quota is full. Losing history is not worth
+			// an error message.
+		}
+	}
+
+	function forget(term) {
+		history = history.filter((x) => x !== term);
+		try {
+			localStorage.setItem(HIST_KEY, JSON.stringify(history));
+		} catch {}
+	}
+
+	function rerun(term) {
+		q = term;
+		go();
+	}
+
 	function onInput() {
 		clearTimeout(timer);
 		// Every query costs an embedding call and a rerank, so wait until the
@@ -40,6 +78,9 @@
 		try {
 			const res = await Search.all(q, 'hybrid', 25, subs);
 			hits = res.hits || [];
+			// Remembered only once the server answered, so a half-typed word
+			// that was never really searched does not end up in the list.
+			remember(q);
 		} catch (e) {
 			err = e.message || 'Search failed.';
 			await offline();
@@ -96,6 +137,7 @@
 
 	let labels = $state({});
 	$effect(() => {
+		loadHistory();
 		Subjects.list()
 			.then((r) => {
 				const m = {};
@@ -132,6 +174,45 @@
 	<div class="banner warn">Offline — searching cached notes only.</div>
 {/if}
 {#if err}<div class="banner err">{err}</div>{/if}
+
+<!-- Nothing typed: recent searches rather than a blank screen. -->
+{#if !searched && !busy}
+	{#if history.length}
+		<div class="sectionhead">
+			<h2>Recent</h2>
+			<span class="spacer"></span>
+			<button
+				class="ghost"
+				style="padding:3px 9px;min-height:0;font-size:12.5px"
+				onclick={() => {
+					history = [];
+					localStorage.removeItem(HIST_KEY);
+				}}>Clear</button
+			>
+		</div>
+		<div class="group">
+			{#each history as term}
+				<div class="grow">
+					<button class="histmain" onclick={() => rerun(term)}>
+						<span class="gtile slate">
+							<svg viewBox="0 0 24 24"><path d="M12 7v5l3.5 2" /><path d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" /></svg>
+						</span>
+						<span class="gbody"><span class="gtitle">{term}</span></span>
+					</button>
+					<button class="histdrop" aria-label="Remove {term}" onclick={() => forget(term)}>✕</button>
+				</div>
+			{/each}
+		</div>
+	{:else}
+		<div class="empty">
+			<p style="font-size:17px;color:var(--text);margin-bottom:6px">Search everything</p>
+			<span class="muted">
+				Notes, mail, events and tasks in one place. Describe what you are after — the wording does
+				not have to match.
+			</span>
+		</div>
+	{/if}
+{/if}
 
 {#if searched && hits.length === 0 && !busy}
 	<div class="empty">

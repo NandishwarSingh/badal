@@ -2475,3 +2475,38 @@ select {
     margin-top: 0;
   }
 }
+
+/* Recent searches: the row is a target, the ✕ is a second one inside it. */
+.histmain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0;
+  min-height: 52px;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text);
+}
+.histdrop {
+  flex: 0 0 auto;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--dim);
+  font-size: 13px;
+}
+.histdrop:active {
+  background-color: var(--fill-hi);
+  color: var(--text);
+}

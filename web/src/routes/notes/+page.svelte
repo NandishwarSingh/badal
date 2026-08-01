@@ -32,7 +32,14 @@
 		if (!loading) void load();
 	});
 
-	const preview = (b) => (b || '').replace(/[#*`[\]]/g, '').slice(0, 140);
+	// Collapse the newlines too: a raw body dropped into one line shows the
+	// gaps between paragraphs as a run of spaces.
+	const preview = (b) =>
+		(b || '')
+			.replace(/[#*`[\]]/g, '')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 130);
 	function when(iso) {
 		if (!iso) return '';
 		const d = new Date(iso),
@@ -73,21 +80,21 @@
 		<p>Tap <strong>Capture</strong> to write your first note.</p>
 	</div>
 {:else}
-	<div class="group">
+	<div class="feed">
 		{#each notes as n (n.slug)}
-			<a class="grow" href="/note/{n.slug}">
-				<span class="gtile slate">
-					<svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z M9 9h6 M9 13h4" /></svg>
-				</span>
-				<span class="gbody">
-					<span class="gtitle">{n.title}</span>
-					<span class="gsub">
-						<span>{when(n.updated_at)}</span>
-						{#if n._dirty}<span class="pill">saving</span>{/if}
+			<a class="feedrow" href="/note/{n.slug}">
+				<span class="feedmark">▤</span>
+				<span class="feedmain">
+					<span class="feedmeta">
 						{#each n.tags || [] as t}<span class="subj">{t}</span>{/each}
+						<span class="when">{when(n.updated_at)}</span>
 					</span>
+					<span class="feedtitle">{n.title}</span>
+					<!-- The preview is most of what makes a note findable by eye;
+					     a list of bare titles all look alike after a week. -->
+					{#if preview(n.body)}<span class="feedsub">{preview(n.body)}</span>{/if}
+					{#if n._dirty}<span class="subjs"><span class="pill">saving</span></span>{/if}
 				</span>
-				<span class="chev">›</span>
 			</a>
 		{/each}
 	</div>
