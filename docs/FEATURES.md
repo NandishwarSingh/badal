@@ -28,19 +28,14 @@ the running order.
 | Eval harness — recall@k, MRR, latency on two query sets | `cmd/badal-eval`, `eval/` |
 | Subjects: 18-topic taxonomy, auto-tagged, filter and browse | `internal/subjects` |
 | Markdown notes with maths, flowcharts, tables, images | `web/src/lib/markdown.js` |
-| Tasks and reminders, push with Done/Snooze, **Now** as home | `internal/tasks` |
+| Tasks and reminders, repeats, push with Done/Snooze, **Now** as home | `internal/tasks` |
+| In-app activity feed with unread count, beside Web Push | `internal/notify` |
+| Design system: Manrope, no gradients, nothing boxed, one icon set | `web/src/app.css`, `Icon.svelte` |
+| Dimension-aware image skeletons; uploads resized to 2048px WebP | `web/src/lib/attach.js` |
 
 ---
 
 ## Next
-
-### Finish tasks — done
-
-| # | Feature | You verify | Size |
-|---|---|---|---|
-| 1 | ✅ **Mail deadline → task**, one tap from an event | A deadline becomes a task that keeps a link back to the mail | S |
-| 2 | ✅ **Repeating tasks** — daily, weekly, monthly | A weekly task reappears after you complete it | M |
-| 3 | ✅ **Tasks in search and the digest** | Search finds a task by its text; the 07:00 push lists what is due today | S |
 
 ### One corpus
 
@@ -120,13 +115,21 @@ That one is mine to do.
 
 ## Order, and how much it matters
 
-4–6 are the design guide's argument made real, and 4 is worth doing before the
-list grows: it removes a tab and mostly deletes code.
+**4** is worth doing before the list grows: it removes a tab and mostly deletes
+code, and it is the design guide's argument made real.
 
-7 is the largest single jump in what the system is worth to you, and everything
-it needs already exists — retrieval, subjects, sections to cite.
+**7 is the largest single jump in what the system is worth to you**, and
+everything it needs already exists — retrieval at 0.969 MRR, subjects, and
+section-level parents to cite from. Nothing blocks it.
 
-12–18 need the Mac awake and a Whisper model, so R1 gates the useful half.
+**12–18 need the Mac awake and a Whisper model**, so R1 gates the useful half.
 
-24–29 are the only group that can wait indefinitely without the rest feeling
-unfinished. 29 must not ship before R2.
+**24–29** are the only group that can wait indefinitely without the rest
+feeling unfinished, and 29 must not ship before R2.
+
+### Known, unfixed
+
+| | Thing | Why it is still here |
+|---|---|---|
+| — | `free food on campus` returns festivals, not the mess circular | A vocabulary gap: the circular says "mess" and "dining", never "food". Not in the eval set, so nothing catches it |
+| — | Yearly repeats, "every N weeks", the `dropped` state | Schema supports all three; no UI. Nobody has asked |
