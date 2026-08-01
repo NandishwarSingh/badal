@@ -51,7 +51,7 @@ the running order.
 | # | Feature | You verify | Size |
 |---|---|---|---|
 | 7 | ✅ **Streaming chat with citations** | Ask "when is the open project due" and get an answer with a tappable source | M |
-| 8 | **Query rewriting + turn memory** | "And who do I email about it" works as a follow-up | S |
+| 8 | ✅ **Query rewriting + turn memory** | "And who do I email about it" works as a follow-up | S |
 | 9 | **Voice in** — hold to speak, Whisper on the Mac | Speak a question, watch it transcribe and answer | M |
 | 10 | **Voice out + barge-in** — `say` first | It talks back, and speaking over it cuts it off | M |
 | 11 | **Fish Audio voice** on the Mac, opt-in | Better timbre; you decide if the latency is worth it | L |
@@ -204,5 +204,6 @@ app smaller.
 
 | | Thing | Why it is still here |
 |---|---|---|
-| — | `free food on campus` returns festivals, not the mess circular | A vocabulary gap: the circular says "mess" and "dining", never "food". Not in the eval set, so nothing catches it |
+| — | ~~`free food on campus` misses the mess circular~~ | **Withdrawn.** The mess circular is about changing your mess plan, not free food. "The sources do not mention any free food on campus" is the correct answer, and I mislabelled it as a miss |
+| — | Retrieval for a broad question is variable run to run | Expansion sometimes returns three extra phrasings and sometimes none, so a source can make the top 8 on one ask and not the next. Answers stay useful either way |
 | — | Yearly repeats, "every N weeks", the `dropped` state | Schema supports all three; no UI. Nobody has asked |

@@ -784,25 +784,32 @@ func main() {
 	// Server-sent events, not a WebSocket. The traffic is one-way and
 	// short-lived, EventSource reconnects on its own, and it survives the
 	// reverse proxy without an upgrade handshake.
-	mux.Handle("GET /v1/chat/stream", authed(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/chat/stream", authed(func(w http.ResponseWriter, r *http.Request) {
+		// Read the request before answering it. Writing the response header
+		// first left the body undecoded and every question arrived empty.
+		var in struct {
+			Q        string      `json:"q"`
+			History  []chat.Turn `json:"history"`
+			Subjects []string    `json:"subjects"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&in); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			httpx.Err(w, 500, "no_streaming", "server cannot stream")
 			return
 		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache, no-transform")
 		w.Header().Set("Connection", "keep-alive")
-		// Without this a proxy may buffer the whole response and deliver it
-		// at once, which loses the only thing streaming is for.
+		// Without this a proxy may buffer the whole response and deliver it at
+		// once, which loses the only thing streaming is for.
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
-
-		var subs []string
-		if v := r.URL.Query().Get("subjects"); v != "" {
-			subs = strings.Split(v, ",")
-		}
 
 		enc := json.NewEncoder(w)
 		emit := func(e chat.Event) error {
@@ -822,7 +829,7 @@ func main() {
 		// Bounded: a wedged upstream must not hold a connection open forever.
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 		defer cancel()
-		if err := chatSvc.Ask(ctx, r.URL.Query().Get("q"), subs, emit); err != nil {
+		if err := chatSvc.Ask(ctx, in.Q, in.History, in.Subjects, emit); err != nil {
 			slog.Warn("chat stream", "err", err)
 		}
 	}))

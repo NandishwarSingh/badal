@@ -24,20 +24,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NandishwarSingh/badal/internal/embed"
 )
 
 const (
-	// How many sources reach the prompt. Beyond about six the model starts
+	// How many sources reach the prompt. Beyond about eight the model starts
 	// averaging across them instead of answering from the best one, and the
 	// citation numbers stop meaning much.
-	topK = 6
+	topK = 8
 
-	// Per source. Enough for a section, short of a whole forwarded thread.
-	maxSourceChars = 1400
+	// Per expanded query. Kept small because several arms are fused and only
+	// topK survive; over-fetching each arm just slows the whole thing down.
+	perQuery = 8
+
+	// Same k as the search pipeline's fusion, and for the same reason: it
+	// flattens the top ranks so a document several queries agree on beats one
+	// that a single query loves.
+	rrfK = 60.0
+
+	// Per source. A3 caps a section at 2400, so trimming to 1400 was cutting
+	// a third off every passage -- including, in one case, the line stating
+	// the commission that made the email an answer at all. Matching the cap
+	// means a cited section arrives whole.
+	maxSourceChars = 2400
 )
 
 type Service struct {
@@ -81,8 +95,14 @@ You are given numbered sources. Follow these rules exactly:
   the university, or anything else.
 - Cite with [1], [2] inline, immediately after the claim each supports. Cite
   the specific source, not a list of everything provided.
-- If the sources do not answer the question, say so plainly in one sentence
-  and stop. Do not guess, and do not pad the answer with what they do contain.
+- If the sources only partly cover the question, answer with what they DO
+  support and add one short sentence naming what is missing. Partial is
+  useful; refusing to answer when you hold half of it is not.
+- Only say nothing is there when genuinely nothing among the sources is
+  relevant. Never invent, never fill a gap from general knowledge.
+- Broad questions ("what should I apply for", "ways to earn") want a short
+  list of the concrete things in the sources, each cited. Do not decline
+  because no single source is titled after the question.
 - Prefer the shortest complete answer. Two sentences beat a paragraph.
 - Dates and times: give them as they appear. Never compute a weekday or a
   relative date yourself.
@@ -97,6 +117,9 @@ type chatMsg struct {
 // render citation chips before the text that references them arrives, then
 // deltas, then done.
 type Event struct {
+	// What it decided to look for. Sent before anything else so the wait has
+	// something honest in it rather than a spinner.
+	Queries []string `json:"queries,omitempty"`
 	Sources []Source `json:"sources,omitempty"`
 	Delta   string   `json:"delta,omitempty"`
 	Done    bool     `json:"done,omitempty"`
@@ -105,7 +128,7 @@ type Event struct {
 
 // Ask retrieves, prompts, and streams. Each event is handed to emit as it
 // happens; emit is expected to flush.
-func (s *Service) Ask(ctx context.Context, question string, subjects []string, emit func(Event) error) error {
+func (s *Service) Ask(ctx context.Context, question string, history []Turn, subjects []string, emit func(Event) error) error {
 	q := strings.TrimSpace(question)
 	if q == "" {
 		return emit(Event{Error: "ask something", Done: true})
@@ -114,7 +137,14 @@ func (s *Service) Ask(ctx context.Context, question string, subjects []string, e
 		return emit(Event{Error: "chat is not configured", Done: true})
 	}
 
-	hits, err := s.emb.Retrieve(ctx, q, topK, nil, subjects, true)
+	// Several phrasings, fused. One question is often not the question the
+	// index can answer -- see rewrite.go.
+	queries := s.expand(ctx, q, history)
+	if err := emit(Event{Queries: queries}); err != nil {
+		return err
+	}
+
+	hits, err := s.retrieveFused(ctx, queries, subjects)
 	if err != nil {
 		return emit(Event{Error: "could not search: " + err.Error(), Done: true})
 	}
@@ -149,8 +179,24 @@ func (s *Service) Ask(ctx context.Context, question string, subjects []string, e
 		return err
 	}
 
-	user := fmt.Sprintf("Sources:\n\n%s---\n\nToday is %s.\nQuestion: %s",
-		ctxBuf.String(), time.Now().Format("Monday 2 January 2006"), q)
+	var prior strings.Builder
+	// Only the last exchange: enough for a follow-up to read naturally,
+	// little enough that the model cannot start answering from the
+	// conversation instead of from the sources.
+	if n := len(history); n >= 2 {
+		for _, t := range history[n-2:] {
+			fmt.Fprintf(&prior, "%s: %s\n", t.Role, trim(squeeze(t.Content), 300))
+		}
+	}
+	user := fmt.Sprintf("Sources:\n\n%s---\n\n%sToday is %s.\nQuestion: %s",
+		ctxBuf.String(),
+		func() string {
+			if prior.Len() == 0 {
+				return ""
+			}
+			return "Earlier in this conversation:\n" + prior.String() + "\n"
+		}(),
+		time.Now().Format("Monday 2 January 2006"), q)
 
 	return s.stream(ctx, user, emit)
 }
@@ -193,6 +239,10 @@ func (s *Service) stream(ctx context.Context, user string, emit func(Event) erro
 	// should appear while the rest is still being generated.
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	// Upstream occasionally completes a stream having sent no content at all.
+	// Silence is the one outcome the client cannot interpret -- it looks
+	// identical to a bug here -- so it gets said out loud.
+	wrote := false
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -222,6 +272,7 @@ func (s *Service) stream(ctx context.Context, user string, emit func(Event) erro
 			continue
 		}
 		if d := chunk.Choices[0].Delta.Content; d != "" {
+			wrote = true
 			if err := emit(Event{Delta: d}); err != nil {
 				return err // client hung up
 			}
@@ -229,6 +280,12 @@ func (s *Service) stream(ctx context.Context, user string, emit func(Event) erro
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
 		return emit(Event{Error: "stream interrupted", Done: true})
+	}
+	if !wrote {
+		return emit(Event{
+			Delta: "The model returned nothing that time. The sources below are what it was given — ask again.",
+			Done:  true,
+		})
 	}
 	return emit(Event{Done: true})
 }
@@ -253,4 +310,75 @@ func trim(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// retrieveFused runs every query and fuses the rankings.
+//
+// Reciprocal rank fusion rather than score averaging: the arms are separate
+// searches whose scores are not comparable, but their ranks are. A source two
+// phrasings both surface outranks one that a single phrasing loved.
+func (s *Service) retrieveFused(ctx context.Context, queries []string, subjects []string) ([]embed.Hit, error) {
+	if len(queries) == 1 {
+		return s.emb.Retrieve(ctx, queries[0], topK, nil, subjects, true)
+	}
+
+	type result struct {
+		hits []embed.Hit
+		err  error
+	}
+	out := make([]result, len(queries))
+	var wg sync.WaitGroup
+	for i, q := range queries {
+		wg.Add(1)
+		go func(i int, q string) {
+			defer wg.Done()
+			h, err := s.emb.Retrieve(ctx, q, perQuery, nil, subjects, true)
+			out[i] = result{h, err}
+		}(i, q)
+	}
+	wg.Wait()
+
+	type acc struct {
+		hit   embed.Hit
+		score float64
+	}
+	byID := map[string]*acc{}
+	var firstErr error
+	any := false
+	for _, r := range out {
+		if r.err != nil {
+			firstErr = r.err
+			continue
+		}
+		any = true
+		for rank, h := range r.hits {
+			k := h.SourceType + ":" + h.SourceID.String()
+			a, ok := byID[k]
+			if !ok {
+				a = &acc{hit: h}
+				byID[k] = a
+			}
+			a.score += 1 / (rrfK + float64(rank+1))
+		}
+	}
+	// Every arm failing is a real error; one arm failing is not worth losing
+	// an answer over.
+	if !any && firstErr != nil {
+		return nil, firstErr
+	}
+
+	fused := make([]*acc, 0, len(byID))
+	for _, a := range byID {
+		fused = append(fused, a)
+	}
+	sort.Slice(fused, func(i, j int) bool { return fused[i].score > fused[j].score })
+
+	hits := make([]embed.Hit, 0, topK)
+	for i, a := range fused {
+		if i >= topK {
+			break
+		}
+		hits = append(hits, a.hit)
+	}
+	return hits, nil
 }

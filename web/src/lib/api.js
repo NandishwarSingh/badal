@@ -213,26 +213,32 @@ export const Notifications = {
 };
 
 /**
- * Stream an answer. EventSource cannot send an Authorization header, and the
- * token is not going in a query string where it would land in every access
- * log, so this parses SSE off a fetch body by hand.
+ * Stream an answer. EventSource cannot send an Authorization header, nor a
+ * body, so this parses SSE off a fetch response by hand.
  *
  * @param {string} q
- * @param {(e: {sources?: any[], delta?: string, done?: boolean, error?: string}) => void} onEvent
+ * @param {(e: {queries?: string[], sources?: any[], delta?: string, done?: boolean, error?: string}) => void} onEvent
  */
-export async function askStream(q, onEvent, { subjects = [], signal } = {}) {
-  const url =
-    `${getBase()}/v1/chat/stream?q=${encodeURIComponent(q)}` +
-    (subjects.length ? `&subjects=${subjects.join(",")}` : "");
-  const res = await fetch(url, {
+export async function askStream(
+  q,
+  onEvent,
+  { history = [], subjects = [], signal } = {},
+) {
+  const res = await fetch(`${getBase()}/v1/chat/stream`, {
+    method: "POST",
     credentials: "include",
     headers: {
       Authorization: "Bearer " + getToken(),
+      "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
+    // A POST because the conversation goes in the body; a few turns of
+    // history would overflow a query string.
+    body: JSON.stringify({ q, history, subjects }),
     signal,
   });
-  if (!res.ok || !res.body) throw new ApiError(res.status, null, url);
+  if (!res.ok || !res.body)
+    throw new ApiError(res.status, null, "/v1/chat/stream");
 
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -241,8 +247,8 @@ export async function askStream(q, onEvent, { subjects = [], signal } = {}) {
     const { value, done } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
-    // Frames are separated by a blank line; anything after the last one is
-    // a partial frame and waits for the next chunk.
+    // Frames are separated by a blank line; whatever follows the last one
+    // is a partial frame and waits for the next chunk.
     const frames = buf.split("\n\n");
     buf = frames.pop() ?? "";
     for (const f of frames) {
