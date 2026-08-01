@@ -2,8 +2,11 @@
 package httpx
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -34,16 +37,29 @@ type statusWriter struct {
 
 func (s *statusWriter) WriteHeader(c int) { s.status = c; s.ResponseWriter.WriteHeader(c) }
 
-// Flush forwards to the underlying writer.
+// Flush and Hijack forward to the underlying writer.
 //
 // Embedding http.ResponseWriter gives you its methods but not its dynamic
-// type, so a handler doing w.(http.Flusher) sees only this struct -- and
-// server-sent events, which are the one thing that genuinely needs a flush,
-// silently lost their streaming and buffered to the end.
+// type, so a handler asking w.(http.Flusher) or w.(http.Hijacker) sees only
+// this struct. Both were found the same way and a month apart: server-sent
+// events silently buffered to the end, and every websocket upgrade answered
+// 501. Any optional interface a handler might reach for has to be forwarded
+// explicitly, so both live here together as a reminder.
 func (s *statusWriter) Flush() {
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (s *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := s.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("httpx: underlying writer cannot hijack")
+	}
+	if s.status == 0 {
+		s.status = http.StatusSwitchingProtocols
+	}
+	return h.Hijack()
 }
 func (s *statusWriter) Write(b []byte) (int, error) {
 	if s.status == 0 {

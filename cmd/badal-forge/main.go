@@ -56,6 +56,10 @@ func main() {
 	kinds := []string{"ocr", "transcribe"}
 	slog.Info("badal-forge starting", "api", *apiURL, "owner", *owner, "kinds", kinds)
 
+	// Speech runs beside the job loop, not inside it. It needs a connection
+	// that stays open, and it must keep working while an OCR job is running.
+	go runSpeech(ctx, *apiURL, *token)
+
 	sem := make(chan struct{}, *maxJobs)
 	var wg sync.WaitGroup
 

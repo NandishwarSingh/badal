@@ -2774,3 +2774,16 @@ select {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
+
+/* Stop talking. Only present while it is. */
+.hush {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--accent);
+  border-color: rgba(91, 157, 255, 0.4);
+}

@@ -34,6 +34,7 @@ the running order.
 | Dimension-aware image skeletons; uploads resized to 2048px WebP | `web/src/lib/attach.js` |
 | Streaming chat with citations, query expansion, turn memory | `internal/chat`, `web/src/lib/Ask.svelte` |
 | Voice in — hold to speak, Whisper on the Mac, nothing leaves it | `cmd/badal-forge/transcribe.go`, `Mic.svelte` |
+| Voice out — Kokoro over a websocket relay, browser fallback, barge-in | `internal/voice`, `deploy/mac/badal-tts.py`, `speech.svelte.js` |
 
 ---
 
@@ -54,8 +55,8 @@ the running order.
 | 7 | ✅ **Streaming chat with citations** | Ask "when is the open project due" and get an answer with a tappable source | M |
 | 8 | ✅ **Query rewriting + turn memory** | "And who do I email about it" works as a follow-up | S |
 | 9 | ✅ **Voice in** — hold to speak, Whisper on the Mac | Speak a question, watch it transcribe and answer | M |
-| 10 | **Voice out + barge-in** — `say` first | It talks back, and speaking over it cuts it off | M |
-| 11 | **Fish Audio voice** on the Mac, opt-in | Better timbre; you decide if the latency is worth it | L |
+| 10 | ✅ **Voice out + barge-in** — Kokoro on the Mac, browser fallback | It talks back, and grabbing the mic cuts it off | M |
+| 11 | ~~Fish Audio~~ — superseded by Kokoro in #10 | — | — |
 
 ### Capture anything
 

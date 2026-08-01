@@ -43,6 +43,9 @@ import (
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
 	"github.com/NandishwarSingh/badal/internal/tasks"
 	"github.com/NandishwarSingh/badal/internal/vision"
+	"github.com/NandishwarSingh/badal/internal/voice"
+
+	"github.com/coder/websocket"
 )
 
 const maxChunkBytes = 8 << 20 // headroom over the 4MB FastCDC max
@@ -140,6 +143,7 @@ func main() {
 	chatSvc := chat.New(embSvc, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_CHAT_MODEL"))
 	taskSvc := tasks.New(st.Pool, feed)
 	notifySvc := notify.New(st.Pool)
+	voiceHub := voice.NewHub()
 	jobSvc := jobs.New(st.Pool)
 	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
@@ -878,6 +882,44 @@ func main() {
 		if err := chatSvc.Ask(ctx, in.Q, in.History, in.Subjects, emit); err != nil {
 			slog.Warn("chat stream", "err", err)
 		}
+	}))
+
+	// --------------------------------------------------------------- voice
+
+	// Whether speech will come from the Mac or the browser. Asked before
+	// connecting, so the client never waits to find out that nothing is
+	// coming.
+	mux.Handle("GET /v1/voice/status", authed(func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, 200, map[string]any{
+			"provider": map[bool]string{true: "mac", false: "browser"}[voiceHub.WorkerOnline()],
+		})
+	}))
+
+	// The Mac registers here and waits for text.
+	mux.Handle("GET /v1/voice/worker", authed(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			// Same origin in the browser; the worker is not a browser and
+			// sends no Origin at all.
+			InsecureSkipVerify: true,
+			CompressionMode:    websocket.CompressionDisabled, // PCM does not compress
+		})
+		if err != nil {
+			return
+		}
+		// No timeout: this connection is meant to live as long as the worker.
+		voiceHub.ServeWorker(context.WithoutCancel(r.Context()), ws)
+	}))
+
+	// The phone listens here.
+	mux.Handle("GET /v1/voice/speak", authed(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			OriginPatterns:  []string{cfg.RPID, "localhost:*"},
+			CompressionMode: websocket.CompressionDisabled,
+		})
+		if err != nil {
+			return
+		}
+		voiceHub.ServeClient(context.WithoutCancel(r.Context()), ws)
 	}))
 
 	// ------------------------------------------------------- notifications

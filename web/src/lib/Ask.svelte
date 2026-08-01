@@ -3,6 +3,7 @@
 	import Icon from '$lib/Icon.svelte';
 	import { render } from '$lib/markdown.js';
 	import Mic from '$lib/Mic.svelte';
+	import { speech, unlock, say, stopSpeaking, sentences } from '$lib/speech.svelte.js';
 
 	let { subjects = [] } = $props();
 
@@ -14,12 +15,19 @@
 	let busy = $state(false);
 	let err = $state('');
 	let ctl = null;
+	// Speak only what was asked by voice. If you typed it, you are looking at
+	// the screen and being read to is an interruption, not a service.
+	let spokenUpto = 0;
+	let voiceAsked = false;
 
-	async function ask() {
+	async function ask(fromVoice = false) {
 		const text = q.trim();
 		if (!text || busy) return;
 		ctl?.abort();
+		stopSpeaking();
 		ctl = new AbortController();
+		voiceAsked = fromVoice;
+		spokenUpto = 0;
 		err = '';
 		busy = true;
 		q = '';
@@ -38,7 +46,17 @@
 				(e) => {
 					if (e.queries) live = { ...live, queries: e.queries };
 					if (e.sources) live = { ...live, sources: e.sources };
-					if (e.delta) live = { ...live, answer: live.answer + e.delta };
+					if (e.delta) {
+						live = { ...live, answer: live.answer + e.delta };
+						// Speak each sentence as it completes rather than
+						// waiting for the whole answer, so talking starts
+						// while the rest is still being written.
+						if (voiceAsked) {
+							const { out, cut } = sentences(live.answer, spokenUpto);
+							out.forEach(say);
+							spokenUpto = cut;
+						}
+					}
 					if (e.error) err = e.error;
 					if (e.done) finish();
 				},
@@ -54,6 +72,12 @@
 	function finish() {
 		if (!busy) return;
 		busy = false;
+		// Whatever was left after the last full stop.
+		if (voiceAsked && live) {
+			const tail = live.answer.slice(spokenUpto).trim();
+			if (tail) say(tail);
+			spokenUpto = live.answer.length;
+		}
 		if (live && live.answer.trim()) {
 			turns = [...turns, live];
 			live = null;
@@ -67,6 +91,7 @@
 
 	function reset() {
 		ctl?.abort();
+		stopSpeaking();
 		turns = [];
 		live = null;
 		err = '';
@@ -139,7 +164,7 @@
 	}
 </script>
 
-<form class="quickadd askbar" onsubmit={(e) => (e.preventDefault(), ask())}>
+<form class="quickadd askbar" onsubmit={(e) => (e.preventDefault(), ask(false))}>
 	<input
 		bind:value={q}
 		placeholder={turns.length ? 'Ask a follow-up…' : 'Ask about your notes, mail and tasks…'}
@@ -148,13 +173,24 @@
 	/>
 	<Mic
 		disabled={busy}
+		onhold={() => {
+			// Barge-in. Grabbing the mic while it is talking stops it dead --
+			// the same gesture that starts a question ends an answer, so
+			// there is nothing extra to learn or reach for.
+			stopSpeaking();
+			// Also the gesture iOS requires before it will play any audio.
+			unlock();
+		}}
 		ontext={(t) => {
-			// Straight to the question: holding a button to dictate and then
-			// having to press send as well is one gesture too many.
 			q = t;
-			ask();
+			ask(true);
 		}}
 	/>
+	{#if speech.speaking}
+		<button type="button" class="hush" onclick={stopSpeaking} aria-label="Stop speaking">
+			<Icon name="mute" size={18} />
+		</button>
+	{/if}
 	{#if busy}
 		<button type="button" onclick={stop}>Stop</button>
 	{:else}

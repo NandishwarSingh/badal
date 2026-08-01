@@ -8,7 +8,7 @@
 	import Icon from '$lib/Icon.svelte';
 	import { toast } from '$lib/toast.svelte.js';
 
-	let { ontext, disabled = false } = $props();
+	let { ontext, onhold, disabled = false } = $props();
 
 	let recording = $state(false);
 	let working = $state(false);
@@ -39,6 +39,10 @@
 
 	async function start() {
 		if (recording || working || disabled) return;
+		// Before anything else: touching the mic silences whatever is being
+		// said. Waiting for permission or the first byte would make barge-in
+		// feel late, which is the same as not having it.
+		onhold?.();
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({
 				audio: { echoCancellation: true, noiseSuppression: true }
