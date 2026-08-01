@@ -78,12 +78,37 @@ this is a planner over things that mostly exist rather than a new product.
 
 | # | Feature | You verify | Size |
 |---|---|---|---|
-| E1a | ✅ **Paper discovery** — both sources behind one endpoint | `/v1/exam/papers?code=…&subject=…` returns 73 for BMAT202L, 25 of them CAT-1 | S |
-| E1b | **Paper caching** — pull the PDFs into blob storage and index them | A paper opens offline and turns up in search | M |
-| E2 | **Timetable import** — a bookmarklet run on VTOP posts your schedule in | Your week appears, with a 20-minute commute either side of every class | S |
+| E1a | ✅ **Paper discovery** — both sources behind one endpoint | 73 papers for BMAT202L, 25 of them CAT-1 | S |
+| E1b | **Paper text** — cache the PDFs, extract text, index them | A paper opens offline and turns up in search | M |
+| E2a | **Academic calendar** — semester shape, exam windows, holidays, rescheduled day-orders | A holiday shows as a free day; a Saturday running Monday's timetable is not treated as free | S |
+| E2b | **VTOP import** — a bookmarklet posts timetable *and* the exam schedule | Your week appears, and each exam has its real date, session, venue and seat | M |
 | E3 | **Syllabus** — modules and topics per course, each with a confidence you set | Mark a module shaky and it gets more time | M |
-| E4 | **The plan** — study blocks generated into real free time, weighted by exam distance and confidence | A schedule that fits between classes and leaves evenings alone | L |
-| E5 | **Progress + balance** — blocks completed, topics covered, and a floor under labs, assignments and time off | It refuses to fill every hour, and says what it protected | M |
+| E6 | **Question bank** — pull individual questions out of the papers, pair them with the answer keys | "Show me every CAT-1 question on Bayes" returns real ones, with real answers | L |
+| E7 | **Teach me** — explain a topic from the syllabus and the papers, with citations | Ask about a shaky topic and get an explanation grounded in what is actually examined | M |
+| E8 | **Practice** — serve questions, you self-mark, wrong ones come back | A session that gets harder where you are weak | M |
+| E4 | **The plan** — study blocks in real free time, weighted by exam distance and confidence | A schedule that fits between classes and leaves evenings alone | L |
+| E5 | **Progress + balance** — a floor under labs, assignments and time off | It refuses to fill every hour, and says what it protected | M |
+
+Two things learned after the first pass:
+
+**Three sources of dates, and they are not rivals.** The academic calendar
+gives the semester's shape — CAT-I runs 8–14 August, this Friday is a holiday,
+Saturday runs a Monday timetable. VTOP gives your schedule inside that shape:
+which course, which session, which seat. Mail gives the earliest warning and
+the least precision.
+
+Precedence when they disagree is **VTOP, then the calendar, then mail**. A
+circular saying "CAT-I from the 8th" must never overwrite a VTOP row saying
+your paper is on the 11th at 2pm in SJT-204. An exam with no VTOP row yet is
+still planned against its window rather than dropped, and carries
+`date_confirmed = false` until the real slot lands.
+
+**Real questions beat generated ones.** Twenty-five past CAT-1 papers exist for
+one course and several carry answer keys, so the questions that actually get
+asked are already written down. Every question records whether it came from a
+paper or a model, and whether its answer came from a printed key or a model --
+because being told you are right when you are not is the worst thing a revision
+tool can do.
 
 Why a bookmarklet and not a login: VTOP has a captcha and short sessions, and
 reading cookies out of the browser store means touching the Keychain and every
