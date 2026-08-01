@@ -1,22 +1,30 @@
-/* badal — pitch black glass, painted rather than composited.
+/* badal — pitch black, painted flat.
  *
- * The page background is pure black with nothing behind the panels, so the
- * glass reads entirely from the sheen gradient, the specular rim and the
- * hairline border.
+ * No gradients anywhere. The earlier build reconstructed "glass" from a
+ * sheen gradient plus a specular rim; it read as plastic on a phone and
+ * every surface cost a gradient to paint. Depth now comes from three
+ * things only: the background it sits on, a hairline, and type weight.
  *
- * There is no backdrop-filter, no filter, and no blur anywhere in this file.
- * Those are GPU compositing operations, and one backdrop-filter per card meant
- * a full-screen blur pass for every row on screen.
- *
- * The glass is reconstructed from things a painter does in a single pass:
- *   1. a near-black opaque fill, a few points lighter than the page
- *   2. a top-down sheen gradient, because light gathers at the top of glass
- *   3. a 1px specular rim, drawn as an inset shadow at zero blur
- *   4. a hairline outer border
- *
- * Together those read as frosted while asking the compositor for nothing.
- * Animation is limited to opacity and transform, and only on elements that
- * were going to move anyway.
+ * Nothing is boxed. Lists run edge to edge with a hairline between rows,
+ * which is what makes a dense screen legible — a card around every group
+ * spends its width on borders and its height on gaps.
+ */
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/manrope-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* No backdrop-filter, no filter, no blur anywhere in this file. Those are
+ * GPU compositing operations, and one backdrop-filter per card meant a
+ * full-screen blur pass for every row on screen. Animation is limited to
+ * opacity and transform, and only on elements that were going to move.
  */
 
 :root {
@@ -27,11 +35,6 @@
   --fill: #14161a;
   --fill-hi: #20232a;
   --fill-field: #0d0e11;
-  --sheen: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.055),
-    rgba(255, 255, 255, 0) 58%
-  );
 
   --edge: rgba(255, 255, 255, 0.085);
   --edge-hi: rgba(255, 255, 255, 0.2);
@@ -94,12 +97,12 @@ body {
 
 .glass,
 .card,
-.tabbar,
 .toast {
   background-color: var(--fill);
-  background-image: var(--sheen);
   border: 1px solid var(--edge);
-  box-shadow: var(--rim);
+}
+.toast {
+  border-radius: 14px;
 }
 
 /* --------------------------------------------------------------- layout */
@@ -204,20 +207,16 @@ main {
 
 .card {
   display: block;
-  position: relative;
-  padding: 14px 16px;
-  margin-bottom: 9px;
-  min-height: 56px;
+  width: 100%;
+  padding: 14px 0;
+  border: none;
+  border-bottom: 1px solid var(--edge);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
   text-decoration: none;
-  color: inherit;
-  border-radius: var(--r);
-  /* Skip painting rows that are off screen entirely. Biggest single win on
-	   a long list, and it costs one line. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 88px;
-  transition:
-    background-color 0.16s var(--ease),
-    border-color 0.16s var(--ease);
 }
 
 .card:active {
@@ -313,7 +312,6 @@ button,
   border-radius: 12px;
   border: 1px solid var(--edge);
   background-color: var(--fill);
-  background-image: var(--sheen);
   box-shadow: var(--rim);
   color: var(--text);
   padding: 12px 16px;
@@ -337,11 +335,6 @@ button:active,
 button.primary,
 .btn.primary {
   background-color: #3f7fe0;
-  background-image: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.16),
-    rgba(255, 255, 255, 0)
-  );
   border-color: rgba(150, 195, 255, 0.34);
   color: #fff;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
@@ -410,11 +403,6 @@ textarea {
   font-weight: 300;
   color: #fff;
   background-color: #3f7fe0;
-  background-image: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.18),
-    rgba(255, 255, 255, 0)
-  );
   border: 1px solid rgba(150, 195, 255, 0.34);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.24),
@@ -632,13 +620,11 @@ textarea {
  */
 
 .conflict {
-  background-color: var(--fill);
-  background-image: var(--sheen);
-  border: 1px solid rgba(255, 196, 83, 0.28);
-  box-shadow: var(--rim);
-  border-radius: var(--r);
-  padding: 14px 15px;
-  margin-bottom: 14px;
+  padding: 14px 0;
+  border: none;
+  border-bottom: 1px solid var(--edge);
+  border-radius: 0;
+  background: none;
 }
 
 .conflict-head {
@@ -826,9 +812,8 @@ textarea {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
-  padding: 8px;
-  border-radius: var(--r);
-  margin-bottom: 16px;
+  padding: 6px 0 10px;
+  margin-bottom: 8px;
 }
 
 .dow {
@@ -905,34 +890,6 @@ textarea {
   margin: 0 0 9px 2px;
 }
 
-.ev {
-  width: 100%;
-  text-align: left;
-  min-height: 0;
-  display: flex;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
-  border-radius: var(--r);
-  background-color: var(--fill);
-  background-image: var(--sheen);
-  border: 1px solid var(--edge);
-  box-shadow: var(--rim);
-}
-
-.ev-time {
-  flex: none;
-  width: 58px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  padding-top: 1px;
-}
-.ev-body {
-  flex: 1;
-  min-width: 0;
-}
 .ev-body strong {
   font-size: 15px;
   font-weight: 610;
@@ -998,7 +955,6 @@ textarea {
   touch-action: pan-y;
   border-radius: 22px 22px 0 0;
   background-color: #101216;
-  background-image: var(--sheen);
   border-top: 1px solid var(--edge-hi);
   box-shadow:
     var(--rim),
@@ -1429,19 +1385,17 @@ select {
 .sk {
   height: 13px;
   border-radius: 7px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.05)
-  );
-  background-size: 220% 100%;
-  animation: shimmer 1.4s linear infinite;
+  background-color: rgba(255, 255, 255, 0.07);
+  animation: pulse 1.5s ease-in-out infinite;
   margin-bottom: 11px;
 }
-@keyframes shimmer {
-  to {
-    background-position: -220% 0;
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
   }
 }
 
@@ -1481,7 +1435,6 @@ select {
   white-space: nowrap;
   color: var(--muted);
   background-color: var(--fill);
-  background-image: var(--sheen);
   border: 1px solid var(--edge);
   box-shadow: var(--rim);
   transition:
@@ -1794,13 +1747,9 @@ select {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin: 0 0 11px;
-  padding: 11px 13px;
-  border-radius: var(--r);
-  background-color: var(--fill);
-  background-image: var(--sheen);
-  border: 1px solid var(--edge);
-  box-shadow: var(--rim);
+  margin: 0 0 14px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--edge);
 }
 .bulklabel {
   font-size: 13px;
@@ -2172,16 +2121,27 @@ select {
 
 .group {
   /* Divider inset follows the leading slot, so the hairline always starts
-	   where the text starts. */
-  --lead: 34px;
-  --gap: 13px;
-  --pad: 14px;
-  border-radius: 18px;
-  background-color: var(--fill);
-  border: 1px solid var(--edge);
-  overflow: hidden;
+     where the text starts. */
+  --lead: 22px;
+  --gap: 12px;
+  --pad: 15px;
+  /* Bleeds past the page gutter so dividers reach both screen edges, the
+     way an unboxed list should. */
+  margin: 0 calc(var(--pad) * -1);
+  border-top: 1px solid var(--edge);
   content-visibility: auto;
   contain-intrinsic-size: auto 240px;
+}
+.group:empty {
+  border-top: none;
+}
+.group.marked {
+  --lead: 20px;
+  --gap: 11px;
+}
+.group.plain {
+  --lead: 0px;
+  --gap: 0px;
 }
 /* Rows led by a small type marker rather than a tile. */
 .group.marked {
@@ -2189,39 +2149,30 @@ select {
   --gap: 11px;
 }
 .group + .group {
-  margin-top: 12px;
+  margin-top: 22px;
 }
 
 .grow {
   position: relative;
   display: flex;
   align-items: center;
+  /* Buttons are centred by the base rule; a row never is. */
+  justify-content: flex-start;
   gap: var(--gap);
   width: 100%;
   min-height: 58px;
-  padding: 11px var(--pad);
+  padding: 12px var(--pad);
   text-align: left;
   border: none;
+  border-bottom: 1px solid var(--edge);
   border-radius: 0;
   background: none;
-  background-image: none;
   box-shadow: none;
   color: var(--text);
   text-decoration: none;
   transition: background-color 0.14s var(--ease);
 }
-.grow + .grow::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: calc(var(--pad) + var(--lead) + var(--gap));
-  right: 0;
-  height: 1px;
-  background: var(--edge);
-}
-.grow.noicon + .grow.noicon::before {
-  left: var(--pad);
-}
+
 .grow:active {
   background-color: var(--fill-hi);
 }
@@ -2232,56 +2183,44 @@ select {
 }
 
 /* Leading slots. */
-.gtile {
+.gtile,
+.gmark {
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  color: #0a0c0f;
+  width: 22px;
+  display: flex;
+  justify-content: center;
+  color: var(--dim);
 }
-.gtile .ic {
-  width: 19px;
-  height: 19px;
-}
+
 .gtile.blue {
-  background: #4a8cf7;
+  color: #4a8cf7;
 }
 .gtile.green {
-  background: #3fb950;
+  color: #3fb950;
 }
 .gtile.purple {
-  background: #a371f7;
+  color: #a371f7;
 }
 .gtile.orange {
-  background: #f0883e;
+  color: #f0883e;
 }
 .gtile.yellow {
-  background: #e3b341;
+  color: #e3b341;
 }
 .gtile.red {
-  background: #f85149;
+  color: #f85149;
 }
 .gtile.grey {
-  background: #6e7681;
+  color: #6e7681;
 }
 .gtile.slate {
-  background: #2c313a;
-  color: var(--text);
+  color: var(--muted);
 }
 
 /* The lighter leading slot: an icon in the type's colour, no plate. Used
    where rows are read in sequence and a grid of coloured squares would
    be louder than the text. */
-.gmark {
-  flex: 0 0 auto;
-  width: 20px;
-  display: flex;
-  justify-content: center;
-  padding-top: 2px;
-  color: var(--dim);
-}
+
 .gmark.message {
   color: #4a8cf7;
 }
@@ -2358,11 +2297,9 @@ select {
 
 /* A card that says something and offers one action. */
 .callout {
-  padding: 18px;
-  border-radius: 18px;
-  background-color: var(--fill);
-  border: 1px solid var(--edge);
-  margin-bottom: 14px;
+  padding: 4px 0 20px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--edge);
 }
 .callout .lead {
   margin: 12px 0 6px;
@@ -2504,14 +2441,7 @@ select {
   overflow: hidden;
   background-color: var(--fill-field);
   border: 1px solid var(--edge);
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.045),
-    rgba(255, 255, 255, 0.09),
-    rgba(255, 255, 255, 0.045)
-  );
-  background-size: 220% 100%;
-  animation: shimmer 1.4s linear infinite;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 .shot.ready {
   animation: none;
@@ -2567,14 +2497,8 @@ select {
 .sk,
 .skmark,
 .sktile {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.05)
-  );
-  background-size: 220% 100%;
-  animation: shimmer 1.4s linear infinite;
+  background-color: rgba(255, 255, 255, 0.07);
+  animation: pulse 1.5s ease-in-out infinite;
 }
 .skbody .sk:last-child {
   margin-bottom: 0;
@@ -2605,10 +2529,10 @@ select {
    became the brightest thing on the screen, which is backwards — the grid
    is a backdrop for the days, not an object in its own right. */
 .grid.glass {
-  background-color: #08090b;
-  background-image: none;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--edge);
   box-shadow: none;
-  border-color: var(--edge);
 }
 .day.other {
   color: var(--dim);
@@ -2634,4 +2558,58 @@ select {
 }
 .flip.up .ic {
   transform: rotate(-90deg);
+}
+
+/* Calendar events. The time column is fixed and tabular so a day reads
+   straight down its left edge. */
+.ev {
+  --lead: 46px;
+  align-items: flex-start;
+}
+.ev-time {
+  flex: 0 0 46px;
+  font-size: 13px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  padding-top: 1px;
+}
+.ev .gtext {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* The base button rule centres its contents; a row never wants that. */
+.histmain,
+.taskmain {
+  justify-content: flex-start;
+}
+
+/* An opaque strip over the status-bar inset. Content scrolls under it
+   rather than colliding with the clock, which is what happened on the
+   calendar once the page was scrolled. */
+.app::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-t);
+  background: var(--bg);
+  z-index: 40;
+  pointer-events: none;
+}
+
+/* Type. Manrope is warmer and a little wider than the system face, so the
+   dense rows need slightly tighter tracking to hold the same rhythm. */
+.pagehead h1,
+.sectionhead h2,
+.gtitle,
+.feedtitle {
+  letter-spacing: -0.015em;
+}
+.gtext,
+.gmeta,
+.gsub {
+  letter-spacing: 0;
 }

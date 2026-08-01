@@ -183,10 +183,15 @@
 		}
 	}
 
+	// 24-hour: "08:30 PM" is nine characters that never align with "All day",
+	// and the column exists so the eye can run straight down it.
 	const fmtTime = (e) =>
 		e.all_day
 			? 'All day'
-			: new Date(e.starts_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+			: new Date(e.starts_at).toLocaleTimeString('en-GB', {
+					hour: '2-digit',
+					minute: '2-digit'
+				});
 	const fmtDay = (d) =>
 		d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 	const fmtWhen = (iso2) =>
@@ -290,19 +295,15 @@
 		<p class="muted" style="padding:8px 2px">Nothing scheduled.</p>
 	{:else}
 		{#each dayEvents as e (e.id)}
-			<button class="ev" onclick={() => (sheet = e)}>
-				<div class="ev-time">{fmtTime(e)}</div>
-				<div class="ev-body">
-					<div class="row">
-						<strong>{e.title}</strong>
-						<span class="spacer"></span>
-						<span class="pill {e.state === 'proposed' ? 'warn' : ''}">{e.kind}</span>
-					</div>
-					{#if e.location}<div class="muted">{e.location}</div>{/if}
-					{#if e.source_subject}
-						<div class="muted" style="font-size:12px;margin-top:3px">from “{e.source_subject}”</div>
-					{/if}
-				</div>
+			<button class="grow ev" onclick={() => (sheet = e)}>
+				<!-- Time leads in a fixed, tabular column so the day reads down
+				     the left edge instead of hunting for it on each row. -->
+				<span class="ev-time">{fmtTime(e)}</span>
+				<span class="gbody">
+					<span class="gtitle">{e.title}</span>
+					{#if e.location}<span class="gtext">{e.location}</span>{/if}
+				</span>
+				{#if e.state === 'proposed'}<span class="pill warn">review</span>{/if}
 			</button>
 		{/each}
 	{/if}

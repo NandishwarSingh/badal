@@ -36,9 +36,17 @@
 
 	// Collapse the newlines too: a raw body dropped into one line shows the
 	// gaps between paragraphs as a run of spaces.
+	// Strip the markup, not just its brackets. The old version removed [ and ]
+	// but left the bang and the parentheses, so an image came out as
+	// "!IMG_0499(badal:notes/test/53f36430.jpg)" across two lines of preview.
 	const preview = (b) =>
 		(b || '')
-			.replace(/[#*`[\]]/g, '')
+			.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+			.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+			.replace(/\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/g, (_, t, l) => l || t)
+			.replace(/```[\s\S]*?```/g, '')
+			.replace(/^\s*[#>\-*+]\s+/gm, '')
+			.replace(/[*`_~]/g, '')
 			.replace(/\s+/g, ' ')
 			.trim()
 			.slice(0, 130);

@@ -234,8 +234,9 @@
 	<div class="muted" style="margin:-2px 0 10px">{hits.length} tagged items</div>
 {/if}
 
-<div class="group marked">
-	{#each hits as h, i (h.source_type + (h.source_id ?? h.slug) + i)}
+{#if hits.length}
+	<div class="group marked">
+		{#each hits as h, i (h.source_type + (h.source_id ?? h.slug) + i)}
 		<a class="grow rich" href={href(h)}>
 			<span class="gmark {h.source_type}"><Icon name={mark[h.source_type] ?? 'note'} size={17} /></span>
 			<span class="gbody">
@@ -254,3 +255,4 @@
 		</a>
 	{/each}
 </div>
+{/if}
