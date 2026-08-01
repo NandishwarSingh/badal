@@ -43,7 +43,7 @@ the running order.
 |---|---|---|---|
 | 4 | **Library** — merge Search and Notes into one surface with type chips | Notes, mail, events and tasks in one list; filter by type and subject | M |
 | 5 | **Calendar into Now** — month grid as a segment, retire the Calendar tab | The month view is a segment of Now; mail moved to Library | M |
-| 6 | **Capture sheet** — the ⊕ offers Note or Task | ⊕ asks what you are capturing instead of assuming a note | S |
+| 6 | ✅ **Capture chooser** — Note, Task or Photo | ⊕ asks what you are capturing instead of assuming a note | S |
 
 ### Talk to it
 
@@ -101,31 +101,69 @@ the running order.
 
 ## Yours, not mine
 
-| | Item | Why it is stuck |
-|---|---|---|
-| R1 | Install the power daemon | One `sudo` command. Mentioned several times; the Mac still sleeps on battery |
-| R2 | Decide the second blob copy — wire the laptop, or a cloud archive | **Blocks #29.** Evicted blobs would have exactly one copy until this is settled |
-| R3 | Revive badal-forge over ethernet — optional | Unlocks the 300GB archive |
-| R4 | Review the extracted events and tell me the wrong ones | I cannot tune the extraction prompt against data only you can judge |
+Settled 1 Aug 2026:
 
-I also need a Whisper model (`small.en`, ~500MB) pulled to the Mac before #13.
-That one is mine to do.
+| | Item | Outcome |
+|---|---|---|
+| R4 | Review the extracted events | **Closed.** Good enough as they are; the extraction prompt stays |
+| R3 | Revive badal-forge over ethernet | **Dropped.** No plans, so the 300GB LV is not coming back |
+| R2 | Second blob copy | **Cloud archive.** With the laptop dropped it is the only remaining option. Needs a provider picked and a card — see #29 |
+
+Still open:
+
+| | Item | What it costs you to leave |
+|---|---|---|
+| R1 | Install the power daemon | Not installed as of this check: no LaunchDaemon and `disablesleep` unset. The worker holds `caffeinate` per job, so anything already running finishes — but with the lid shut the Mac sleeps between jobs, so captures queue until you open it. One `sudo` |
+
+Mine before #13: pull Whisper `small.en` (~500MB) to the Mac.
 
 ---
 
-## Order, and how much it matters
+## Ranked
 
-**4** is worth doing before the list grows: it removes a tab and mostly deletes
-code, and it is the design guide's argument made real.
+Two scores out of five. **Solves** is how much a real gap in badal closes —
+something that is annoying, missing or breaking today. **Cool** is how much it
+makes the thing feel like yours rather than a CRUD app. They are genuinely
+different axes: eviction scores 4 and 1, voice out scores 1 and 5.
 
-**7 is the largest single jump in what the system is worth to you**, and
-everything it needs already exists — retrieval at 0.969 MRR, subjects, and
-section-level parents to cite from. Nothing blocks it.
+| # | Feature | Solves | Cool | Why that score |
+|---|---|:---:|:---:|---|
+| 7 | Streaming chat with citations | 5 | 5 | 156 sources you can only reach by remembering the right words. This is the feature the last month of retrieval work was for |
+| 15 | Image → structured note | 5 | 5 | Apple Vision OCR has been on the Mac for weeks with no route from a photo to a note. Photograph a slide, get markdown |
+| 4 | Library | 5 | 2 | Removes a tab, deletes code, makes the corpus feel like one thing. Dull and the right next move |
+| 12–14 | Recorder → Whisper → note | 4 | 5 | Lectures. The single most student-shaped feature here |
+| 19+20 | Auto-linking + related-on-open | 4 | 4 | The graph is a promise nothing has kept: `[[links]]` by hand is a habit nobody sustains |
+| 17 | Reminder by voice | 3 | 5 | "Remind me to submit the form Friday." Small, and the best demo in the list |
+| 9 | Voice in | 3 | 5 | Speaking to your own data is the moment it stops being a website |
+| 22 | Smart collections | 4 | 3 | 18 subjects and 229 tags exist and currently only filter a search box |
+| 24 | File browser | 4 | 2 | badal cannot hold a PDF you want next week. A personal cloud should |
+| 16 | Reminder from a photo | 3 | 5 | Poster on a noticeboard becomes a reminder carrying the picture |
+| 18 | Lecture mode | 4 | 4 | 90 minutes to sectioned notes with jumpable timestamps. Needs 12–14 first |
+| 21 | Entities as graph nodes | 3 | 5 | "Everything about Prof X" across mail, events, tasks and notes |
+| 29 | Eviction + cold restore | 4 | 2 | 50GB fills. Unblocked now that R2 is decided |
+| 10 | Voice out + barge-in | 2 | 5 | Pure delight. Nothing is broken without it |
+| 8 | Query rewriting + turn memory | 3 | 2 | Invisible, and what makes #7 feel like a conversation instead of a form |
+| 25 | Photos grid + albums | 3 | 3 | Depends on 24 |
+| 23 | Timeline | 2 | 4 | Lovely to scrub, solves nothing search does not |
+| 30 | Web clipper | 3 | 3 | Cheap once notes exist |
+| 27 | WebDAV | 3 | 2 | Finder mounts badal. Quietly the most "real cloud" item |
+| 28 | Sharing links | 2 | 3 | Signed and expiring. Only matters when you want to send someone something |
+| 5 | Calendar into Now | 3 | 1 | Housekeeping from the design guide |
+| 32 | Import | 3 | 1 | One afternoon, then never again |
+| 33 | Local LLM | 2 | 3 | Privacy and independence, at 8–14B quality |
+| 26 | Organise files | 2 | 1 | Only bites once there are hundreds |
+| 31 | Templates | 2 | 1 | |
+| 11 | Fish Audio voice | 1 | 4 | Timbre. Strictly a nicety over #10 |
 
-**12–18 need the Mac awake and a Whisper model**, so R1 gates the useful half.
+### If you want one line
 
-**24–29** are the only group that can wait indefinitely without the rest
-feeling unfinished, and 29 must not ship before R2.
+**Build 7.** Highest on both axes, everything it needs already exists, nothing
+blocks it.
+
+**Then 15**, because the OCR is sitting there unused and it is the other 5/5.
+
+**4 whenever the UI annoys you enough** — it is the only item that makes the
+app smaller.
 
 ### Known, unfixed
 
