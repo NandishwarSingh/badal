@@ -1182,6 +1182,46 @@ func main() {
 
 	// Pull every paper for a course and keep it. Idempotent, so it can be
 	// re-run whenever a source publishes more.
+	mux.Handle("POST /v1/exam/calendar", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Source  string       `json:"source"`
+			Entries []exam.Entry `json:"entries"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		if len(body.Entries) == 0 {
+			httpx.Err(w, 400, "bad_request", "no entries")
+			return
+		}
+		res, err := examSvc.ImportCalendar(r.Context(), body.Entries, body.Source)
+		if err != nil {
+			httpx.Err(w, 500, "calendar_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, res)
+	}))
+
+	mux.Handle("GET /v1/exam/calendar", authed(func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		list, err := examSvc.Upcoming(r.Context(), limit)
+		if err != nil {
+			httpx.Err(w, 500, "calendar_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"entries": list})
+	}))
+
+	mux.Handle("GET /v1/exam/next-window", authed(func(w http.ResponseWriter, r *http.Request) {
+		win, err := examSvc.NextWindow(r.Context(), r.URL.Query().Get("kind"))
+		if err != nil {
+			httpx.Err(w, 404, "no_window", "no exam window on the calendar")
+			return
+		}
+		httpx.JSON(w, 200, win)
+	}))
+
 	mux.Handle("POST /v1/exam/reextract", authed(func(w http.ResponseWriter, r *http.Request) {
 		batch, _ := strconv.Atoi(r.URL.Query().Get("batch"))
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)
