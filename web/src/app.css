@@ -2631,8 +2631,41 @@ select {
   font-size: 16px;
   line-height: 1.62;
   overflow-wrap: break-word;
-  white-space: pre-wrap;
   margin-bottom: 8px;
+}
+/* The answer is markdown, so it inherits the note renderer's typography.
+   Tightened, because an answer is read in one pass rather than studied. */
+.answer.rendered > div > *:first-child {
+  margin-top: 0;
+}
+.answer.rendered > div > *:last-child {
+  margin-bottom: 0;
+}
+.answer.rendered ul,
+.answer.rendered ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.25em;
+}
+.answer.rendered li {
+  margin: 0.34em 0;
+}
+.answer.rendered li > p {
+  margin: 0;
+}
+.answer.rendered p {
+  margin: 0 0 0.6em;
+}
+.answer.rendered h1,
+.answer.rendered h2,
+.answer.rendered h3,
+.answer.rendered h4 {
+  font-size: 1em;
+  font-weight: 700;
+  margin: 1em 0 0.35em;
+}
+.answer.rendered strong {
+  font-weight: 700;
+  color: var(--text);
 }
 /* A citation is a target, not decoration: the whole point is that a claim
    can be checked in one tap. */

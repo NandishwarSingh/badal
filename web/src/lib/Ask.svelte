@@ -1,6 +1,7 @@
 <script>
 	import { askStream } from '$lib/api.js';
 	import Icon from '$lib/Icon.svelte';
+	import { render } from '$lib/markdown.js';
 
 	let { subjects = [] } = $props();
 
@@ -71,20 +72,56 @@
 		busy = false;
 	}
 
-	// The answer arrives with [1] [2] inline. Splitting on them lets each one
-	// become a tappable chip while the rest of the text keeps streaming.
-	function split(text) {
-		const out = [];
-		const re = /\[(\d+)\]/g;
-		let last = 0;
-		let m;
-		while ((m = re.exec(text))) {
-			if (m.index > last) out.push({ text: text.slice(last, m.index) });
-			out.push({ cite: Number(m[1]) });
-			last = m.index + m[0].length;
+	// The model writes markdown — lists, bold, the occasional table — and
+	// showing it as plain text meant reading literal asterisks and dashes.
+	// render() escapes, parses and sanitises, so nothing in an answer can
+	// inject markup.
+	const html = (text) => render(text || '');
+
+	// Citations are swapped in afterwards, over the rendered DOM, rather than
+	// before parsing: [1] inside a fenced code block should stay [1], and a
+	// marker smuggled through the parser would not survive sanitising.
+	function cites(node, turn) {
+		if (!node) return;
+		const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+		const hits = [];
+		while (walk.nextNode()) {
+			if (/\[\d+\]/.test(walk.currentNode.nodeValue)) hits.push(walk.currentNode);
 		}
-		if (last < text.length) out.push({ text: text.slice(last) });
-		return out;
+		for (const t of hits) {
+			if (t.parentElement?.closest('pre, code')) continue;
+			const frag = document.createDocumentFragment();
+			let last = 0;
+			const re = /\[(\d+)\]/g;
+			let m;
+			while ((m = re.exec(t.nodeValue))) {
+				if (m.index > last) {
+					frag.append(document.createTextNode(t.nodeValue.slice(last, m.index)));
+				}
+				const n = Number(m[1]);
+				const b = document.createElement('button');
+				b.className = 'cite';
+				b.type = 'button';
+				b.textContent = String(n);
+				b.addEventListener('click', () => go(turn, n));
+				frag.append(b);
+				last = m.index + m[0].length;
+			}
+			if (last < t.nodeValue.length) {
+				frag.append(document.createTextNode(t.nodeValue.slice(last)));
+			}
+			t.replaceWith(frag);
+		}
+	}
+
+	// Runs after every update, including each streamed delta.
+	function answerNode(node, turn) {
+		cites(node, turn);
+		return {
+			update(t) {
+				cites(node, t);
+			}
+		};
 	}
 
 	function href(s) {
@@ -149,13 +186,14 @@
 	{/if}
 
 	{#if !t.answer && !t.sources.length}
-		<div class="answer"><span class="caret"></span></div>
+		<div class="answer rendered"><span class="caret"></span></div>
 	{:else}
-		<div class="answer">
-			{#each split(t.answer) as p}
-				{#if p.cite}<button class="cite" onclick={() => go(t, p.cite)}>{p.cite}</button
-					>{:else}{p.text}{/if}
-			{/each}
+		<div class="answer rendered">
+			<!-- render() escapes before parsing and sanitises after, so an
+			     answer cannot inject markup. -->
+			{#key t.answer}
+				<div use:answerNode={t}>{@html html(t.answer)}</div>
+			{/key}
 			{#if busy && t === live}<span class="caret"></span>{/if}
 		</div>
 	{/if}
