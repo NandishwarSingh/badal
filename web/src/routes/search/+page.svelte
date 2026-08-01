@@ -4,6 +4,7 @@
 	import { cache } from '$lib/store.js';
 	import { state as sync } from '$lib/sync.svelte.js';
 	import SubjectChips from '$lib/SubjectChips.svelte';
+	import Icon from '$lib/Icon.svelte';
 
 	let q = $state('');
 	let subs = $state([]);
@@ -131,9 +132,9 @@
 		return '/calendar';
 	}
 	const icon = { note: 'note', message: 'mail', event: 'event', task: 'task' };
-	// A glyph per type, so the eye can skip to the kind it wants without
+	// An icon per type, so the eye can skip to the kind it wants without
 	// reading the label on every row.
-	const mark = { note: '▤', message: '✉', event: '◇', task: '☑' };
+	const mark = { note: 'note', message: 'mail', event: 'event', task: 'task' };
 
 	let labels = $state({});
 	$effect(() => {
@@ -194,12 +195,12 @@
 			{#each history as term}
 				<div class="grow">
 					<button class="histmain" onclick={() => rerun(term)}>
-						<span class="gtile slate">
-							<svg viewBox="0 0 24 24"><path d="M12 7v5l3.5 2" /><path d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" /></svg>
-						</span>
-						<span class="gbody"><span class="gtitle">{term}</span></span>
+						<span class="gtile slate"><Icon name="clock" size={19} stroke={2.1} /></span>
+						<span class="gtitle">{term}</span>
 					</button>
-					<button class="histdrop" aria-label="Remove {term}" onclick={() => forget(term)}>✕</button>
+					<button class="histdrop" aria-label="Remove {term}" onclick={() => forget(term)}>
+						<Icon name="close" size={13} stroke={2.2} />
+					</button>
 				</div>
 			{/each}
 		</div>
@@ -229,19 +230,19 @@
 	<div class="muted" style="margin:-2px 0 10px">{hits.length} tagged items</div>
 {/if}
 
-<div class="feed">
+<div class="group marked">
 	{#each hits as h, i (h.source_type + (h.source_id ?? h.slug) + i)}
-		<a class="feedrow" href={href(h)}>
-			<span class="feedmark {h.source_type}">{mark[h.source_type] ?? '•'}</span>
-			<span class="feedmain">
-				<span class="feedmeta">
+		<a class="grow rich" href={href(h)}>
+			<span class="gmark {h.source_type}"><Icon name={mark[h.source_type] ?? 'note'} size={17} /></span>
+			<span class="gbody">
+				<span class="gmeta">
 					<span>{icon[h.source_type] ?? h.source_type}</span>
 					{#if h.score}<span class="when">{Math.round(h.score * 100)}%</span>{/if}
 				</span>
-				<span class="feedtitle">{h.title || '(untitled)'}</span>
-				{#if h.snippet}<span class="feedsub">{mailSnippet(h.snippet, 150)}</span>{/if}
+				<span class="gtitle">{h.title || '(untitled)'}</span>
+				{#if h.snippet}<span class="gtext">{mailSnippet(h.snippet, 150)}</span>{/if}
 				{#if h.subjects?.length}
-					<span class="subjs">
+					<span class="gsub">
 						{#each h.subjects as sj}<span class="subj">{labels[sj] ?? sj}</span>{/each}
 					</span>
 				{/if}

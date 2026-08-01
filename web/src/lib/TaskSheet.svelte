@@ -1,6 +1,7 @@
 <script>
 	import { Tasks } from '$lib/api.js';
 	import Rendered from '$lib/Rendered.svelte';
+	import Icon from '$lib/Icon.svelte';
 	import { taskCache } from '$lib/store.js';
 	import { queueTask } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
@@ -177,7 +178,9 @@
 	{#each reminders as _, i}
 		<div class="remrow">
 			<input type="datetime-local" bind:value={reminders[i]} />
-			<button class="ghost" aria-label="Remove reminder" onclick={() => dropRemind(i)}>✕</button>
+			<button class="ghost" aria-label="Remove reminder" onclick={() => dropRemind(i)}>
+				<Icon name="close" size={14} stroke={2.1} />
+			</button>
 		</div>
 	{/each}
 

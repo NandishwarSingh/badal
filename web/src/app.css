@@ -1874,14 +1874,14 @@ select {
   padding: 0 16px;
 }
 
-/* A task row is a .grow with no tile: the tick on the right is the only
-   affordance it needs, and a second circle on the left would compete. */
+/* A task row is a .grow whose leading slot is empty and whose trailing
+   slot is the tick. It keeps the same container, inset and divider as
+   every other row -- only the slots differ. */
 .taskrow {
-  padding: 0 0 0 15px;
-  gap: 0;
+  padding-right: 0;
 }
 .taskrow + .taskrow::before {
-  left: 15px;
+  left: var(--pad);
 }
 .taskrow.isdone {
   opacity: 0.48;
@@ -1898,9 +1898,7 @@ select {
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
-  padding: 12px 4px 12px 0;
-  min-height: 58px;
-  justify-content: center;
+  padding: 0;
   text-align: left;
   border: none;
   border-radius: 0;
@@ -1913,8 +1911,9 @@ select {
 .tick {
   position: relative;
   flex: 0 0 auto;
-  width: 52px;
+  width: 54px;
   align-self: stretch;
+  margin: -11px 0;
   min-height: 58px;
   display: grid;
   place-items: center;
@@ -1955,6 +1954,11 @@ select {
 .gsub .overdue {
   color: var(--danger);
   font-weight: 650;
+}
+.gsub .bellmark,
+.gsub .rep {
+  display: inline-flex;
+  align-items: center;
 }
 .gsub .bellmark {
   color: var(--accent);
@@ -2033,62 +2037,8 @@ select {
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-.actlist {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-}
-.actrow {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  width: 100%;
-  padding: 11px 12px;
-  text-align: left;
-  border-radius: var(--r-sm);
-  background-color: var(--fill-field);
-  border: 1px solid var(--edge);
-  box-shadow: none;
-  color: var(--text);
-}
 /* Unread is a left edge, not a colour wash: it survives at a glance and does
    not fight the pitch black. */
-.actrow.unseen {
-  border-left: 2px solid var(--accent);
-  background-color: var(--fill);
-  background-image: var(--sheen);
-}
-.acticon {
-  flex: 0 0 auto;
-  width: 22px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.4;
-}
-.actrow.unseen .acticon {
-  color: var(--accent);
-}
-.actbody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.acttitle {
-  font-size: 14.5px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-.actsub {
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.actwhen {
-  font-size: 11.5px;
-  color: var(--dim);
-}
 
 /* Reminder rows in the task sheet */
 .remrow {
@@ -2220,30 +2170,45 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-/* The grouped container. */
+/* ── One list, everywhere ────────────────────────────────────────────
+   Every list in the app is a .group of .grow rows. There is no second
+   treatment: having grouped cards on some screens and bare full-bleed
+   rows on others made Notes and Now look like different products.
+
+   A row is always [leading] [body] [trailing]. What changes between a
+   settings row and a mail row is which slots are filled, never the
+   container, the inset or the divider.                                  */
+
 .group {
+  /* Divider inset follows the leading slot, so the hairline always starts
+	   where the text starts. */
+  --lead: 34px;
+  --gap: 13px;
+  --pad: 14px;
   border-radius: 18px;
   background-color: var(--fill);
   border: 1px solid var(--edge);
   overflow: hidden;
   content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
+  contain-intrinsic-size: auto 240px;
+}
+/* Rows led by a small type marker rather than a tile. */
+.group.marked {
+  --lead: 20px;
+  --gap: 11px;
 }
 .group + .group {
   margin-top: 12px;
 }
 
-/* A row. The divider is drawn by the row above via a pseudo-element inset
-   past the tile, so it lines up with the text rather than cutting the
-   whole card in half. */
 .grow {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--gap);
   width: 100%;
   min-height: 58px;
-  padding: 10px 14px;
+  padding: 11px var(--pad);
   text-align: left;
   border: none;
   border-radius: 0;
@@ -2258,20 +2223,24 @@ select {
   content: "";
   position: absolute;
   top: 0;
-  left: 61px;
+  left: calc(var(--pad) + var(--lead) + var(--gap));
   right: 0;
   height: 1px;
   background: var(--edge);
 }
 .grow.noicon + .grow.noicon::before {
-  left: 14px;
+  left: var(--pad);
 }
 .grow:active {
   background-color: var(--fill-hi);
 }
+/* Rows with a preview line are taller and align their leading slot to the
+   first line of text rather than to the middle of the block. */
+.grow.rich {
+  align-items: flex-start;
+}
 
-/* Colour-coded tile. Identity at a glance is most of what makes a long
-   list scannable, and colour does it faster than a label. */
+/* Leading slots. */
 .gtile {
   flex: 0 0 auto;
   width: 34px;
@@ -2281,14 +2250,9 @@ select {
   place-items: center;
   color: #0a0c0f;
 }
-.gtile svg {
+.gtile .ic {
   width: 19px;
   height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.1;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .gtile.blue {
   background: #4a8cf7;
@@ -2316,6 +2280,34 @@ select {
   color: var(--text);
 }
 
+/* The lighter leading slot: an icon in the type's colour, no plate. Used
+   where rows are read in sequence and a grid of coloured squares would
+   be louder than the text. */
+.gmark {
+  flex: 0 0 auto;
+  width: 20px;
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+  color: var(--dim);
+}
+.gmark.message {
+  color: #4a8cf7;
+}
+.gmark.event {
+  color: #a371f7;
+}
+.gmark.task {
+  color: var(--ok);
+}
+.gmark.note {
+  color: var(--muted);
+}
+.gmark.reminder {
+  color: var(--accent);
+}
+
+/* Body. */
 .gbody {
   flex: 1;
   min-width: 0;
@@ -2323,11 +2315,38 @@ select {
   flex-direction: column;
   gap: 2px;
 }
+.gmeta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.gmeta .when {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
 .gtitle {
   font-size: 15.5px;
   font-weight: 560;
-  line-height: 1.3;
+  line-height: 1.32;
   overflow-wrap: anywhere;
+}
+.grow.rich .gtitle {
+  font-weight: 620;
+  font-size: 15px;
+}
+.gtext {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .gsub {
   display: flex;
@@ -2337,85 +2356,13 @@ select {
   font-size: 12.5px;
   color: var(--muted);
 }
+
+/* Trailing. */
 .chev {
   flex: 0 0 auto;
+  display: grid;
+  place-items: center;
   color: var(--dim);
-  font-size: 17px;
-  line-height: 1;
-}
-
-/* Feed rows: mail, search results, activity. No tile, no card — a flat
-   list with the same inset hairline, because these are read in sequence
-   rather than picked from. */
-.feed {
-  border-top: 1px solid var(--edge);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 300px;
-}
-.feedrow {
-  position: relative;
-  display: flex;
-  gap: 12px;
-  width: 100%;
-  padding: 13px 2px;
-  text-align: left;
-  border: none;
-  border-radius: 0;
-  background: none;
-  background-image: none;
-  box-shadow: none;
-  color: var(--text);
-  text-decoration: none;
-}
-.feedrow + .feedrow::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 34px;
-  right: 0;
-  height: 1px;
-  background: var(--edge);
-}
-.feedrow:active {
-  background-color: rgba(255, 255, 255, 0.03);
-}
-.feedmark {
-  flex: 0 0 auto;
-  width: 22px;
-  padding-top: 2px;
-  color: var(--dim);
-  font-size: 14px;
-  text-align: center;
-}
-.feedmain {
-  flex: 1;
-  min-width: 0;
-}
-.feedmeta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-.feedmeta .when {
-  margin-left: auto;
-  flex: 0 0 auto;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.feedtitle {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.34;
-  overflow-wrap: anywhere;
-}
-.feedsub {
-  margin-top: 3px;
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.4;
 }
 
 /* A card that says something and offers one action. */
@@ -2460,9 +2407,6 @@ select {
   .grow:hover {
     background-color: var(--fill-hi);
   }
-  .feedrow:hover {
-    background-color: rgba(255, 255, 255, 0.035);
-  }
   /* Wide screens get two columns of groups rather than one very long
 	   column of very wide rows. */
   .groupcols {
@@ -2482,9 +2426,8 @@ select {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--gap);
   padding: 0;
-  min-height: 52px;
   text-align: left;
   border: none;
   border-radius: 0;
@@ -2506,7 +2449,27 @@ select {
   color: var(--dim);
   font-size: 13px;
 }
+.histdrop {
+  display: grid;
+  place-items: center;
+}
 .histdrop:active {
   background-color: var(--fill-hi);
   color: var(--text);
+}
+
+/* One chevron path, mirrored for "previous" rather than a second asset. */
+.prevmo .ic {
+  transform: scaleX(-1);
+}
+.calhead .ghost {
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+}
+
+/* Unread activity: a left edge, not a colour wash. */
+.grow.unseen {
+  background-color: rgba(91, 157, 255, 0.055);
+  box-shadow: inset 2px 0 0 var(--accent);
 }

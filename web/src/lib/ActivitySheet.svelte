@@ -1,6 +1,7 @@
 <script>
 	import { Notifications } from '$lib/api.js';
 	import { goto } from '$app/navigation';
+	import Icon from '$lib/Icon.svelte';
 
 	let { items = [], onclose, onchanged } = $props();
 
@@ -47,7 +48,7 @@
 		onchanged?.();
 	}
 
-	const icon = { reminder: '◔', review: '◇', digest: '☀', job: '⚙', system: '!' };
+	const icon = { reminder: 'bell', review: 'review', digest: 'digest', job: 'gear', system: 'alert' };
 
 	function when(iso) {
 		const d = new Date(iso);
@@ -84,14 +85,14 @@
 		</div>
 	{/if}
 
-	<div class="actlist">
+	<div class="group marked">
 		{#each list as n (n.id)}
-			<button class="actrow" class:unseen={!n.read_at} onclick={() => open(n)}>
-				<span class="acticon">{icon[n.kind] ?? '•'}</span>
-				<span class="actbody">
-					<span class="acttitle">{n.title}</span>
-					{#if n.body}<span class="actsub">{n.body}</span>{/if}
-					<span class="actwhen">{when(n.created_at)}</span>
+			<button class="grow rich" class:unseen={!n.read_at} onclick={() => open(n)}>
+				<span class="gmark {n.kind}"><Icon name={icon[n.kind] ?? 'bell'} size={17} /></span>
+				<span class="gbody">
+					<span class="gmeta"><span class="when">{when(n.created_at)}</span></span>
+					<span class="gtitle">{n.title}</span>
+					{#if n.body}<span class="gtext">{n.body}</span>{/if}
 				</span>
 			</button>
 		{/each}

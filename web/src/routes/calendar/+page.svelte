@@ -5,6 +5,7 @@
 	import { toast } from '$lib/toast.svelte.js';
 	import EventSheet from '$lib/EventSheet.svelte';
 	import MessageSheet from '$lib/MessageSheet.svelte';
+	import Icon from '$lib/Icon.svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 
@@ -244,9 +245,13 @@
 	<div class="calwrap">
 	<div class="calcol">
 	<div class="calhead">
-		<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
+		<button class="ghost prevmo" onclick={() => shiftMonth(-1)} aria-label="Previous month">
+			<Icon name="chevron" size={17} stroke={2} />
+		</button>
 		<strong>{cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
-		<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Next month">›</button>
+		<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Next month">
+			<Icon name="chevron" size={17} stroke={2} />
+		</button>
 	</div>
 
 	<div class="grid glass">
@@ -307,19 +312,19 @@
 	{#if messages.length === 0}
 		<div class="empty">No mail yet.</div>
 	{:else}
-		<div class="feed">
+		<div class="group marked">
 			{#each messages as m (m.id)}
-				<button class="feedrow" onclick={() => (mailSheet = m.id)}>
-					<span class="feedmark">✉</span>
-					<span class="feedmain">
-						<span class="feedmeta">
+				<button class="grow rich" onclick={() => (mailSheet = m.id)}>
+					<span class="gmark message"><Icon name="mail" size={17} /></span>
+					<span class="gbody">
+						<span class="gmeta">
 							<span>{m.from_name || m.from_addr}</span>
 							<span class="when">{fmtWhen(m.received_at)}</span>
 						</span>
-						<span class="feedtitle">{m.subject || '(no subject)'}</span>
-						<span class="feedsub">{mailSnippet(m.snippet, 130)}</span>
+						<span class="gtitle">{m.subject || '(no subject)'}</span>
+						<span class="gtext">{mailSnippet(m.snippet, 130)}</span>
 						{#if m.subjects?.length || !m.extracted}
-							<span class="subjs">
+							<span class="gsub">
 								{#each m.subjects ?? [] as sj}<span class="subj">{subjectLabels[sj] ?? sj}</span>{/each}
 								{#if !m.extracted}<span class="pill warn">not scanned</span>{/if}
 							</span>

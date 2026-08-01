@@ -1,4 +1,5 @@
 <script>
+	import Icon from '$lib/Icon.svelte';
 	import { onMount } from 'svelte';
 	import { getBase, getToken, setCreds, clearCreds, api, echo } from '$lib/api.js';
 	import { cache, outbox, requestPersistence } from '$lib/store.js';
@@ -279,7 +280,7 @@
 							<svg viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14" /></svg>
 						</span>
 						<span class="gbody"><span class="gtitle">Add a passkey for this device</span></span>
-						{#if busy === 'enrol'}<span class="spinner"></span>{:else}<span class="chev">›</span>{/if}
+						{#if busy === 'enrol'}<span class="spinner"></span>{:else}<span class="chev"><Icon name="chevron" size={15} stroke={2} /></span>{/if}
 					</button>
 				{/if}
 			</div>

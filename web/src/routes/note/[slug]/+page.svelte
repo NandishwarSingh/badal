@@ -6,6 +6,7 @@
 	import { mergeBoth } from '$lib/diff.js';
 	import Editor from '$lib/Editor.svelte';
 	import Rendered from '$lib/Rendered.svelte';
+	import Icon from '$lib/Icon.svelte';
 	import { cache } from '$lib/store.js';
 	import { queuePut, queueDelete, state as sync } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
@@ -226,7 +227,7 @@
 						<span class="gtitle">{l.title || l.slug}</span>
 						{#if !l.id}<span class="gsub">not created yet</span>{/if}
 					</span>
-					<span class="chev">›</span>
+					<span class="chev"><Icon name="chevron" size={15} stroke={2} /></span>
 				</a>
 			{/each}
 		</div>
@@ -244,7 +245,7 @@
 						<span class="gtitle">{l.title || l.slug}</span>
 						{#if !l.id}<span class="gsub">not created yet</span>{/if}
 					</span>
-					<span class="chev">›</span>
+					<span class="chev"><Icon name="chevron" size={15} stroke={2} /></span>
 				</a>
 			{/each}
 		</div>

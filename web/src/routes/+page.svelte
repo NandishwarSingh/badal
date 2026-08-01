@@ -12,6 +12,7 @@
 	import { state as sync, queueTask, queueTaskDelete } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import TaskSheet from '$lib/TaskSheet.svelte';
+	import Icon from '$lib/Icon.svelte';
 	import ActivitySheet from '$lib/ActivitySheet.svelte';
 
 	let view = $state('open'); // open | today | done
@@ -239,14 +240,14 @@
 {#if tasks.length}
 	<div class="group">
 		{#each tasks as t (t.id)}
-			<div class="grow taskrow" class:isdone={t.state !== 'open'}>
+			<div class="grow noicon taskrow" class:isdone={t.state !== 'open'}>
 				<button class="taskmain" onclick={() => (sheet = t)}>
 					<span class="gtitle">{t.title}</span>
 					{#if t.due_at || hasReminder(t) || t.priority > 1 || t.recur_every || t.subjects?.length}
 						<span class="gsub">
 							{#if t.due_at}<span class:overdue={overdue(t)}>{relative(t.due_at)}</span>{/if}
-							{#if hasReminder(t)}<span class="bellmark" title="Reminder set">◔</span>{/if}
-							{#if t.recur_every}<span class="rep" title="Repeats {t.recur_every}ly">↻</span>{/if}
+							{#if hasReminder(t)}<span class="bellmark" title="Reminder set"><Icon name="bell" size={13} label="Reminder set" /></span>{/if}
+							{#if t.recur_every}<span class="rep" title="Repeats {t.recur_every}ly"><Icon name="repeat" size={13} label="Repeats" /></span>{/if}
 							{#if t.priority > 1}<span class="prio">!</span>{/if}
 							{#each t.subjects ?? [] as sj}<span class="subj">{sj}</span>{/each}
 						</span>
