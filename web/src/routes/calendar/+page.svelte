@@ -1,4 +1,5 @@
 <script>
+	import Skeleton from '$lib/Skeleton.svelte';
 	import { onMount } from 'svelte';
 	import { Cal, Mail, Jobs, Subjects } from '$lib/api.js';
 	import { mailSnippet } from '$lib/mailtext.js';
@@ -239,7 +240,7 @@
 {/if}
 
 {#if loading}
-	<div class="empty">Loading…</div>
+	<Skeleton rows={5} />
 
 {:else if view === 'calendar'}
 	<div class="calwrap">

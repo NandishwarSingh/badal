@@ -1,4 +1,5 @@
 <script>
+	import Skeleton from '$lib/Skeleton.svelte';
 	import Icon from '$lib/Icon.svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -74,7 +75,7 @@
 {/if}
 
 {#if loading}
-	<div class="empty">Loading…</div>
+	<Skeleton rows={5} />
 {:else if notes.length === 0}
 	<div class="empty">
 		<p style="font-size:17px;margin-bottom:6px;color:var(--text)">Nothing here yet</p>

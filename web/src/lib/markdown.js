@@ -130,7 +130,20 @@ const renderer = {
     // browser, because a device-token sign-in has no cookie for <img> to
     // send and every picture would 401.
     if (href.startsWith("badal:")) {
-      return `<img class="att" data-badal="${escapeHtml(href.slice(6))}" alt="${alt}"${title} loading="lazy">`;
+      // badal:path#WxH -- the fragment carries the natural size so the space
+      // can be reserved before a single byte has arrived.
+      const raw = href.slice(6);
+      const m = /^(.*?)#(\d+)x(\d+)$/.exec(raw);
+      const path = m ? m[1] : raw;
+      // Images stored before sizes were recorded get a plausible shape rather
+      // than a collapsed line.
+      const ratio = m ? `${m[2]} / ${m[3]}` : "16 / 10";
+      const guess = m ? "" : " guess";
+      return (
+        `<span class="shot${guess}" style="aspect-ratio:${ratio}">` +
+        `<img class="att" data-badal="${escapeHtml(path)}" alt="${alt}"${title} loading="lazy">` +
+        `</span>`
+      );
     }
     return `<img src="${escapeHtml(href)}" alt="${alt}"${title} loading="lazy" referrerpolicy="no-referrer">`;
   },

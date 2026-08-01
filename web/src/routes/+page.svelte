@@ -1,4 +1,5 @@
 <script>
+	import Skeleton from '$lib/Skeleton.svelte';
 	// Now: what needs you today.
 	//
 	// The home surface from docs/DESIGN.md. Tasks are its content, but the point
@@ -222,7 +223,7 @@
 {/if}
 
 {#if loading && tasks.length === 0}
-	<div class="empty">Loading…</div>
+	<Skeleton rows={4} kind="plain" />
 {:else if tasks.length === 0}
 	<div class="empty">
 		{#if view === 'done'}

@@ -2473,3 +2473,101 @@ select {
   background-color: rgba(91, 157, 255, 0.055);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+
+/* Images in notes -----------------------------------------------------
+   The wrapper holds the picture's exact aspect ratio from the moment the
+   markdown parses, so the skeleton is the size the image will be and the
+   text below it never moves. Reading a blob through fetch means nothing
+   can paint until the last byte lands -- on a 3MB photo that is seconds
+   of an <img> with no src, which the browser renders as its alt text. */
+.shot {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0 0 0.95em;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background-color: var(--fill-field);
+  border: 1px solid var(--edge);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.045),
+    rgba(255, 255, 255, 0.09),
+    rgba(255, 255, 255, 0.045)
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.shot.ready {
+  animation: none;
+  background-image: none;
+}
+.shot img,
+.shot .att {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.22s var(--ease);
+}
+.shot.ready img {
+  opacity: 1;
+}
+
+/* Skeleton rows, shaped like the rows they stand in for. A spinner says
+   "something is happening"; this says what is about to be there. */
+.skrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap);
+  padding: 13px var(--pad);
+  min-height: 58px;
+}
+.skrow + .skrow {
+  border-top: 1px solid var(--edge);
+}
+.skmark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 16px;
+  border-radius: 5px;
+}
+.sktile {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+.skbody {
+  flex: 1;
+  min-width: 0;
+}
+.sk,
+.skmark,
+.sktile {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.05)
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.skbody .sk:last-child {
+  margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot,
+  .sk,
+  .skmark,
+  .sktile {
+    animation: none;
+  }
+}

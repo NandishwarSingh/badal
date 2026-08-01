@@ -97,6 +97,22 @@ t('badal images defer to the API loader', () => {
 	assert.doesNotMatch(h, /src="badal:/, 'browser would try to fetch badal: directly');
 });
 
+// Reading a blob through fetch means nothing paints until the last byte
+// lands. On a 3MB photo that was seconds of an <img> with no src, which the
+// browser renders as its alt text -- the space has to be reserved up front.
+t('a sized image reserves its exact ratio', () => {
+	const h = render('![shot](badal:notes/a/b.png#1600x900)');
+	assert.match(h, /class="shot"/);
+	assert.match(h, /aspect-ratio:1600 \/ 900/);
+	assert.match(h, /data-badal="notes\/a\/b\.png"/, 'the fragment must not stay in the path');
+});
+
+t('an unsized image gets a guess it can correct later', () => {
+	const h = render('![image](badal:notes/a/c.jpg)');
+	assert.match(h, /class="shot guess"/);
+	assert.match(h, /aspect-ratio:16 \/ 10/);
+});
+
 t('external images keep their src', () => {
 	assert.match(parse('![x](https://e.com/a.png)'), /src="https:\/\/e\.com\/a\.png"/);
 });

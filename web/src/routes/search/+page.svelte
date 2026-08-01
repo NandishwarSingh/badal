@@ -5,6 +5,7 @@
 	import { state as sync } from '$lib/sync.svelte.js';
 	import SubjectChips from '$lib/SubjectChips.svelte';
 	import Icon from '$lib/Icon.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let q = $state('');
 	let subs = $state([]);
@@ -213,6 +214,10 @@
 			</span>
 		</div>
 	{/if}
+{/if}
+
+{#if busy && hits.length === 0}
+	<Skeleton rows={4} />
 {/if}
 
 {#if searched && hits.length === 0 && !busy}

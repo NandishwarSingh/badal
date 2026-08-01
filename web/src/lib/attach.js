@@ -34,6 +34,25 @@ const EXT = {
   "image/svg+xml": "svg",
 };
 
+// Natural size, read before upload and carried in the reference.
+//
+// Without it a note with three photographs reflows three times as they
+// arrive, and every image is preceded by a collapsed line showing its alt
+// text. With it the space is reserved exactly, so a skeleton of the right
+// shape sits there and nothing moves when the bytes land.
+async function dimensions(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const d = { w: bmp.width, h: bmp.height };
+    bmp.close?.();
+    return d.w && d.h ? d : null;
+  } catch {
+    // SVG and some HEIC variants cannot be decoded this way. The renderer
+    // falls back to a generic shape rather than failing.
+    return null;
+  }
+}
+
 export const isImage = (f) =>
   !!f && typeof f.type === "string" && f.type.startsWith("image/");
 
