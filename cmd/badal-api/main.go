@@ -22,6 +22,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/auth"
 	"github.com/NandishwarSingh/badal/internal/blobs"
 	"github.com/NandishwarSingh/badal/internal/calendar"
+	"github.com/NandishwarSingh/badal/internal/chat"
 	"github.com/NandishwarSingh/badal/internal/chunks"
 	"github.com/NandishwarSingh/badal/internal/config"
 	"github.com/NandishwarSingh/badal/internal/embed"
@@ -136,6 +137,7 @@ func main() {
 	visSvc := vision.New(os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_VISION_MODEL"))
 	embSvc := embed.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_EMBED_MODEL"))
 	subjSvc := subjects.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_TAG_MODEL"))
+	chatSvc := chat.New(embSvc, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_CHAT_MODEL"))
 	taskSvc := tasks.New(st.Pool, feed)
 	notifySvc := notify.New(st.Pool)
 	jobSvc := jobs.New(st.Pool)
@@ -774,6 +776,54 @@ func main() {
 			httpx.Err(w, 409, "reindex_busy", "a rebuild is already running")
 		default:
 			httpx.Err(w, 500, "reindex_failed", err.Error())
+		}
+	}))
+
+	// ----------------------------------------------------------------- ask
+
+	// Server-sent events, not a WebSocket. The traffic is one-way and
+	// short-lived, EventSource reconnects on its own, and it survives the
+	// reverse proxy without an upgrade handshake.
+	mux.Handle("GET /v1/chat/stream", authed(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			httpx.Err(w, 500, "no_streaming", "server cannot stream")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("Connection", "keep-alive")
+		// Without this a proxy may buffer the whole response and deliver it
+		// at once, which loses the only thing streaming is for.
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+
+		var subs []string
+		if v := r.URL.Query().Get("subjects"); v != "" {
+			subs = strings.Split(v, ",")
+		}
+
+		enc := json.NewEncoder(w)
+		emit := func(e chat.Event) error {
+			if _, err := io.WriteString(w, "data: "); err != nil {
+				return err
+			}
+			if err := enc.Encode(e); err != nil { // Encode writes the newline
+				return err
+			}
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+			flusher.Flush()
+			return nil
+		}
+
+		// Bounded: a wedged upstream must not hold a connection open forever.
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		if err := chatSvc.Ask(ctx, r.URL.Query().Get("q"), subs, emit); err != nil {
+			slog.Warn("chat stream", "err", err)
 		}
 	}))
 

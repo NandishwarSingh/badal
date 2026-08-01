@@ -211,3 +211,48 @@ export const Notifications = {
     api(`/v1/notifications/read${id ? `?id=${id}` : ""}`, { method: "POST" }),
   clear: () => api("/v1/notifications", { method: "DELETE" }),
 };
+
+/**
+ * Stream an answer. EventSource cannot send an Authorization header, and the
+ * token is not going in a query string where it would land in every access
+ * log, so this parses SSE off a fetch body by hand.
+ *
+ * @param {string} q
+ * @param {(e: {sources?: any[], delta?: string, done?: boolean, error?: string}) => void} onEvent
+ */
+export async function askStream(q, onEvent, { subjects = [], signal } = {}) {
+  const url =
+    `${getBase()}/v1/chat/stream?q=${encodeURIComponent(q)}` +
+    (subjects.length ? `&subjects=${subjects.join(",")}` : "");
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: {
+      Authorization: "Bearer " + getToken(),
+      Accept: "text/event-stream",
+    },
+    signal,
+  });
+  if (!res.ok || !res.body) throw new ApiError(res.status, null, url);
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    // Frames are separated by a blank line; anything after the last one is
+    // a partial frame and waits for the next chunk.
+    const frames = buf.split("\n\n");
+    buf = frames.pop() ?? "";
+    for (const f of frames) {
+      const line = f.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      try {
+        onEvent(JSON.parse(line.slice(5).trim()));
+      } catch {
+        // A malformed frame is not worth killing the stream over.
+      }
+    }
+  }
+}

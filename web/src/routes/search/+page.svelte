@@ -6,7 +6,11 @@
 	import SubjectChips from '$lib/SubjectChips.svelte';
 	import Icon from '$lib/Icon.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import Ask from '$lib/Ask.svelte';
 
+	// find | ask. A real choice, unlike the exact-words toggle that went:
+	// one returns a list to pick from, the other returns an answer.
+	let tab = $state('find');
 	let q = $state('');
 	let subs = $state([]);
 	let hits = $state([]);
@@ -152,12 +156,23 @@
 
 <div class="pagehead">
 	<h1>
-		Search
-		<span class="sub">Ask in your own words — wording need not match</span>
+		{tab === 'ask' ? 'Ask' : 'Search'}
+		<span class="sub">
+			{tab === 'ask' ? 'Answers from your own corpus, with sources' : 'Wording need not match'}
+		</span>
 	</h1>
 	<span class="spacer"></span>
 	{#if busy}<span class="spinner"></span>{/if}
 </div>
+
+<div class="seg">
+	<button class:on={tab === 'find'} onclick={() => (tab = 'find')}>Find</button>
+	<button class:on={tab === 'ask'} onclick={() => (tab = 'ask')}>Ask</button>
+</div>
+
+{#if tab === 'ask'}
+	<Ask subjects={subs} />
+{:else}
 
 <!-- svelte-ignore a11y_autofocus -->
 <input
@@ -255,4 +270,5 @@
 		</a>
 	{/each}
 </div>
+{/if}
 {/if}

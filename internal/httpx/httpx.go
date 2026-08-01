@@ -33,6 +33,18 @@ type statusWriter struct {
 }
 
 func (s *statusWriter) WriteHeader(c int) { s.status = c; s.ResponseWriter.WriteHeader(c) }
+
+// Flush forwards to the underlying writer.
+//
+// Embedding http.ResponseWriter gives you its methods but not its dynamic
+// type, so a handler doing w.(http.Flusher) sees only this struct -- and
+// server-sent events, which are the one thing that genuinely needs a flush,
+// silently lost their streaming and buffered to the end.
+func (s *statusWriter) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
 func (s *statusWriter) Write(b []byte) (int, error) {
 	if s.status == 0 {
 		s.status = 200

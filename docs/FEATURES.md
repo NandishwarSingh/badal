@@ -32,6 +32,7 @@ the running order.
 | In-app activity feed with unread count, beside Web Push | `internal/notify` |
 | Design system: Manrope, no gradients, nothing boxed, one icon set | `web/src/app.css`, `Icon.svelte` |
 | Dimension-aware image skeletons; uploads resized to 2048px WebP | `web/src/lib/attach.js` |
+| Streaming chat with citations, grounded in the corpus | `internal/chat`, `web/src/lib/Ask.svelte` |
 
 ---
 
@@ -49,7 +50,7 @@ the running order.
 
 | # | Feature | You verify | Size |
 |---|---|---|---|
-| 7 | **Streaming chat with citations** | Ask "when is the open project due" and get an answer with a tappable source | M |
+| 7 | ✅ **Streaming chat with citations** | Ask "when is the open project due" and get an answer with a tappable source | M |
 | 8 | **Query rewriting + turn memory** | "And who do I email about it" works as a follow-up | S |
 | 9 | **Voice in** — hold to speak, Whisper on the Mac | Speak a question, watch it transcribe and answer | M |
 | 10 | **Voice out + barge-in** — `say` first | It talks back, and speaking over it cuts it off | M |
