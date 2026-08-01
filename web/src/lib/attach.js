@@ -19,6 +19,14 @@ import { api, getBase, getToken } from "$lib/api.js";
 
 const MAX_BYTES = 8 << 20; // matches the server's per-chunk ceiling
 
+// Longest edge kept. A 6.1" screen at 3x resolves about 1200px across, and
+// these are read on a phone far more often than they are zoomed into, so
+// 2048 is already generous. A 3MB camera photo lands around 250KB.
+const MAX_EDGE = 2048;
+const QUALITY = 0.85;
+// Below this, re-encoding costs more than it saves.
+const SKIP_UNDER = 300 * 1024;
+
 const hex = (bytes) =>
   Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -40,6 +48,58 @@ const EXT = {
 // arrive, and every image is preceded by a collapsed line showing its alt
 // text. With it the space is reserved exactly, so a skeleton of the right
 // shape sits there and nothing moves when the bytes land.
+// Resize and re-encode before upload.
+//
+// The alternative is sending what the camera produced: seconds to upload,
+// seconds to come back down through fetch, and a note that cannot paint until
+// the last byte of a 3MB JPEG arrives.
+async function shrink(file) {
+  // Vectors have no pixels to resample, and re-encoding a GIF through a
+  // canvas throws away every frame but the first.
+  if (file.type === "image/svg+xml" || file.type === "image/gif") return file;
+
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file);
+  } catch {
+    return file; // undecodable here; let the server keep the original
+  }
+  const longest = Math.max(bmp.width, bmp.height);
+  const scale = Math.min(1, MAX_EDGE / longest);
+  if (scale === 1 && file.size < SKIP_UNDER) {
+    bmp.close?.();
+    return file;
+  }
+
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bmp.close?.();
+    return file;
+  }
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+
+  const blob = await new Promise((res) =>
+    canvas.toBlob(res, "image/webp", QUALITY),
+  );
+  // Safari once refused webp from a canvas; jpeg is the universal fallback.
+  const out =
+    blob ??
+    (await new Promise((res) => canvas.toBlob(res, "image/jpeg", QUALITY)));
+  // A screenshot of flat colour can come out larger as webp than as the
+  // original png. Keeping whichever is smaller costs one comparison.
+  if (!out || out.size >= file.size) return file;
+
+  const base = (file.name || "image").replace(/\.[a-z0-9]+$/i, "");
+  const ext = out.type === "image/webp" ? "webp" : "jpg";
+  return new File([out], `${base}.${ext}`, { type: out.type });
+}
+
 async function dimensions(file) {
   try {
     const bmp = await createImageBitmap(file);
@@ -112,10 +172,21 @@ const urls = new Map();
 export async function load(path) {
   if (urls.has(path)) return urls.get(path);
   const p = (async () => {
-    const res = await fetch(`${getBase()}/v1/blob/${path}`, {
-      credentials: "include",
-      headers: { Authorization: "Bearer " + getToken() },
-    });
+    // A hung request must not leave a skeleton up forever: that is
+    // indistinguishable from "still loading", which is exactly the confusion
+    // this had. Better an error with a retry.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 45000);
+    let res;
+    try {
+      res = await fetch(`${getBase()}/v1/blob/${path}`, {
+        credentials: "include",
+        headers: { Authorization: "Bearer " + getToken() },
+        signal: ctl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     // A cold archive read answers 202 with a restore queued rather than
     // the bytes, so there is nothing to show yet.
     if (res.status === 202) throw new Error("restoring");

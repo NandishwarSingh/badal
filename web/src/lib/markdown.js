@@ -254,6 +254,7 @@ let seq = 0;
  */
 export async function enhance(root, { loadImage } = {}) {
   if (!root) return;
+  if (loadImage) lastLoader = loadImage;
 
   const maths = root.querySelectorAll(".math[data-tex]:not([data-done])");
   if (maths.length) {
@@ -301,27 +302,81 @@ export async function enhance(root, { loadImage } = {}) {
   }
 
   if (loadImage) {
+    // Sequential on purpose: a note of ten photographs would otherwise open
+    // ten simultaneous downloads and finish all of them late.
     for (const img of root.querySelectorAll(
       "img.att[data-badal]:not([data-done])",
     )) {
       img.dataset.done = "1";
+      const shot = img.closest(".shot");
       try {
         const url = await loadImage(img.dataset.badal);
-        if (url) img.src = url;
-        else img.replaceWith(missing(img.alt));
+        if (!url) throw new Error("no url");
+        // The image is opaque from the start and simply paints over the
+        // shimmer when it is ready. The previous version revealed it by
+        // adding a class, which made one missed event enough to hide a
+        // perfectly loaded photograph behind a skeleton forever.
+        img.addEventListener("load", () => {
+          // Anything stored before sizes were recorded was reserved at a
+          // guessed ratio; correct it rather than cropping to fit.
+          if (shot?.classList.contains("guess") && img.naturalWidth) {
+            shot.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+          }
+          shot?.classList.add("ready");
+        });
+        img.addEventListener("error", () => fail(shot, img));
+        img.src = url;
+        if (img.complete && img.naturalWidth) shot?.classList.add("ready");
       } catch {
-        img.replaceWith(missing(img.alt));
+        fail(shot, img);
       }
     }
   }
 }
 
-function missing(alt) {
+// A picture that cannot be fetched says so, and offers to try again. Leaving
+// the skeleton up forever is indistinguishable from "still loading", which is
+// exactly the confusion this had.
+function fail(shot, img) {
+  const el = shot ?? img;
+  if (!el.parentNode) return;
+  el.replaceWith(missing(img.alt, img.dataset.badal));
+}
+
+function missing(alt, path) {
   const d = document.createElement("div");
   d.className = "att-missing";
-  d.textContent = alt ? `Image unavailable — ${alt}` : "Image unavailable";
+  const label = document.createElement("span");
+  label.textContent = alt
+    ? `Could not load “${alt}”`
+    : "Could not load this image";
+  d.appendChild(label);
+  if (path) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ghost";
+    btn.textContent = "Try again";
+    btn.addEventListener("click", () => {
+      const span = document.createElement("span");
+      span.className = "shot guess";
+      span.style.aspectRatio = "16 / 10";
+      const img = document.createElement("img");
+      img.className = "att";
+      img.alt = alt || "";
+      img.dataset.badal = path;
+      span.appendChild(img);
+      d.replaceWith(span);
+      // Re-enter the normal path rather than duplicating the loading logic.
+      enhance(span.parentNode ?? span, { loadImage: lastLoader });
+    });
+    d.appendChild(btn);
+  }
   return d;
 }
+
+// Remembered so the retry button can reuse whatever fetcher the page passed
+// in, without threading it through the DOM.
+let lastLoader = null;
 
 /** True if the source needs the heavy renderers, for deciding to show a spinner. */
 export const needsEnhance = (src) =>

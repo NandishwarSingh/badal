@@ -1,6 +1,7 @@
 <script>
 	import { Cal, Mail, api } from '$lib/api.js';
 	import { toast } from '$lib/toast.svelte.js';
+	import Icon from '$lib/Icon.svelte';
 
 	let { event, onclose, onchanged } = $props();
 
@@ -168,7 +169,7 @@
 		</div>
 
 		<div class="sheet-when">{when(e)}</div>
-		{#if e.location}<div class="muted" style="margin-top:2px">📍 {e.location}</div>{/if}
+		{#if e.location}<div class="muted whereline" style="margin-top:4px"><Icon name="pin" size={14} /> {e.location}</div>{/if}
 
 		<div class="row" style="margin-top:10px">
 			<span class="tag">{e.kind}</span>
@@ -198,7 +199,7 @@
 						{e.source_from}
 					</div>
 				</div>
-				<span class="muted">{showSource ? '▲' : '▼'}</span>
+				<span class="muted flip" class:up={showSource}><Icon name="chevron" size={14} stroke={2} /></span>
 			</button>
 			{#if showSource}
 				{#if source}
@@ -224,7 +225,8 @@
 			     do something about it. Committing is a separate act. -->
 			<button onclick={addTask} disabled={!!busy}>
 				{#if busy === 'task'}<span class="spinner"></span>{/if}
-				{taskAdded ? 'On your list ✓' : 'Add to tasks'}
+				{#if taskAdded}<Icon name="check" size={15} stroke={2.2} />{/if}
+				{taskAdded ? 'On your list' : 'Add to tasks'}
 			</button>
 			<div class="row" style="gap:8px">
 				<button style="flex:1" onclick={() => (editing = true)} disabled={!!busy}>Edit</button>

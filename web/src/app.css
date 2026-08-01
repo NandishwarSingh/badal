@@ -148,21 +148,20 @@ main {
 
 /* -------------------------------------------------------------- tab bar */
 
+/* Flush to the bottom edge with a hairline above it, the way a native bar
+   sits. Detached and floating read as a widget laid over the app rather
+   than part of it. */
 .tabbar {
   position: fixed;
-  left: 9px;
-  right: 9px;
-  bottom: calc(var(--safe-b) + 8px);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 30;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  border-radius: 20px;
-  /* Near-opaque so it needs nothing from behind it. */
-  background-color: #101216;
-  box-shadow:
-    var(--rim),
-    0 6px 18px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
+  padding-bottom: var(--safe-b);
+  background-color: #08090b;
+  border-top: 1px solid var(--edge);
 }
 
 .tabbar a {
@@ -171,27 +170,23 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   height: var(--tabbar);
   color: var(--dim);
   text-decoration: none;
   font-size: 10.5px;
   font-weight: 550;
-  transition: color 0.16s var(--ease);
+  letter-spacing: 0.005em;
+  transition: color 0.15s var(--ease);
 }
 
+/* Colour alone marks the active tab. A pill behind it was one more painted
+   rectangle on the busiest element in the app. */
 .tabbar a.active {
-  color: var(--text);
+  color: var(--accent);
 }
-
-/* Static. A pill that springs in on every tab change is a paint on the
-   busiest element in the app, at the exact moment it is busiest. */
-.tabbar a.active::before {
-  content: "";
-  position: absolute;
-  inset: 6px 9px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.075);
+.tabbar a:active {
+  background-color: rgba(255, 255, 255, 0.04);
 }
 
 .tabbar svg {
@@ -603,10 +598,6 @@ textarea {
     padding: 0 20px;
     font-size: 13.5px;
     gap: 8px;
-  }
-  .tabbar a.active::before {
-    inset: 4px 6px;
-    border-radius: 12px;
   }
   main {
     padding-bottom: 40px;
@@ -2420,7 +2411,16 @@ select {
   }
 }
 
-/* Recent searches: the row is a target, the ✕ is a second one inside it. */
+/* Recent searches. The row is one target; the ✕ is a smaller one inside
+   it, so a mis-tap re-runs the search rather than deleting it. */
+.histrow {
+  padding-right: 6px;
+  --lead: 20px;
+  --gap: 11px;
+}
+.histrow + .histrow::before {
+  left: calc(var(--pad) + var(--lead) + var(--gap));
+}
 .histmain {
   flex: 1;
   min-width: 0;
@@ -2436,26 +2436,41 @@ select {
   box-shadow: none;
   color: var(--text);
 }
+.histmain .gtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .histdrop {
   flex: 0 0 auto;
-  width: 38px;
-  min-height: 38px;
+  width: 36px;
+  min-height: 36px;
   padding: 0;
+  display: grid;
+  place-items: center;
   border: none;
   border-radius: 50%;
   background: none;
   background-image: none;
   box-shadow: none;
   color: var(--dim);
-  font-size: 13px;
-}
-.histdrop {
-  display: grid;
-  place-items: center;
 }
 .histdrop:active {
   background-color: var(--fill-hi);
   color: var(--text);
+}
+
+/* A text action that is not a button-shaped object. */
+.linkbtn {
+  min-height: 0;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 560;
 }
 
 /* One chevron path, mirrored for "previous" rather than a second asset. */
@@ -2511,11 +2526,13 @@ select {
   margin: 0;
   border: none;
   border-radius: 0;
+  /* Exact for anything with a recorded size, so cover never crops. A
+     guessed ratio is corrected on load before this matters. */
   object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.22s var(--ease);
-}
-.shot.ready img {
+  /* Opaque from the start: the picture simply paints over the shimmer once
+     it decodes. Revealing it with a class meant a single missed load event
+     could hide a perfectly loaded photograph behind a skeleton forever --
+     which is exactly what happened. */
   opacity: 1;
 }
 
@@ -2570,4 +2587,51 @@ select {
   .sktile {
     animation: none;
   }
+}
+
+/* Meta below the preview rather than above it: the title should be the
+   first thing read, not the date. */
+.grow.rich .gbody > .gmeta:last-child {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.gmeta .dot {
+  color: var(--edge-hi);
+}
+
+/* Calendar: darker than a card ----------------------------------------
+   The month grid is a large unbroken surface. At the card's lightness it
+   became the brightest thing on the screen, which is backwards — the grid
+   is a backdrop for the days, not an object in its own right. */
+.grid.glass {
+  background-color: #08090b;
+  background-image: none;
+  box-shadow: none;
+  border-color: var(--edge);
+}
+.day.other {
+  color: var(--dim);
+  opacity: 0.5;
+}
+.day.today {
+  border-color: rgba(91, 157, 255, 0.5);
+}
+.day.sel {
+  background-color: var(--accent-soft);
+  border-color: rgba(91, 157, 255, 0.45);
+}
+
+.whereline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* One chevron path, rotated, rather than a second glyph for "collapse". */
+.flip .ic {
+  transform: rotate(90deg);
+  transition: transform 0.18s var(--ease);
+}
+.flip.up .ic {
+  transform: rotate(-90deg);
 }

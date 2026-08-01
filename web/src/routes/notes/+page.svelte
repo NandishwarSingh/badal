@@ -82,20 +82,19 @@
 		<p>Tap <strong>Capture</strong> to write your first note.</p>
 	</div>
 {:else}
-	<div class="group marked">
+	<div class="group">
 		{#each notes as n (n.slug)}
-			<a class="grow rich" href="/note/{n.slug}">
-				<span class="gmark note"><Icon name="note" size={17} /></span>
+			<a class="grow rich noicon" href="/note/{n.slug}">
 				<span class="gbody">
-					<span class="gmeta">
-						{#each n.tags || [] as t}<span class="subj">{t}</span>{/each}
-						<span class="when">{when(n.updated_at)}</span>
-					</span>
 					<span class="gtitle">{n.title}</span>
 					<!-- The preview is most of what makes a note findable by eye;
 					     a list of bare titles all look alike after a week. -->
 					{#if preview(n.body)}<span class="gtext">{preview(n.body)}</span>{/if}
-					{#if n._dirty}<span class="gsub"><span class="pill">saving</span></span>{/if}
+					<span class="gmeta">
+						<span>{when(n.updated_at)}</span>
+						{#each n.tags || [] as t}<span class="dot">·</span><span>{t}</span>{/each}
+						{#if n._dirty}<span class="pill">saving</span>{/if}
+					</span>
 				</span>
 			</a>
 		{/each}

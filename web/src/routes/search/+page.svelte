@@ -184,8 +184,7 @@
 			<h2>Recent</h2>
 			<span class="spacer"></span>
 			<button
-				class="ghost"
-				style="padding:3px 9px;min-height:0;font-size:12.5px"
+				class="linkbtn"
 				onclick={() => {
 					history = [];
 					localStorage.removeItem(HIST_KEY);
@@ -194,9 +193,9 @@
 		</div>
 		<div class="group">
 			{#each history as term}
-				<div class="grow">
+				<div class="grow histrow">
 					<button class="histmain" onclick={() => rerun(term)}>
-						<span class="gtile slate"><Icon name="clock" size={19} stroke={2.1} /></span>
+						<span class="gmark"><Icon name="clock" size={17} /></span>
 						<span class="gtitle">{term}</span>
 					</button>
 					<button class="histdrop" aria-label="Remove {term}" onclick={() => forget(term)}>
