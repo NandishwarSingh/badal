@@ -46,45 +46,81 @@ export async function unlock() {
 
 export async function connect() {
   if (ws && ws.readyState <= 1) return;
+
+  let ticket = "";
   try {
     const st = await fetch(`${getBase()}/v1/voice/status`, {
       credentials: "include",
       headers: { Authorization: "Bearer " + getToken() },
     }).then((r) => r.json());
-    speech.provider = st.provider || "browser";
+    if (st.provider !== "mac") {
+      useBrowser();
+      return;
+    }
+    // A browser socket carries no headers, so a single-use ticket fetched
+    // over an authenticated request stands in for the token.
+    const t = await fetch(`${getBase()}/v1/voice/ticket`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Authorization: "Bearer " + getToken() },
+    }).then((r) => r.json());
+    ticket = t.ticket || "";
   } catch {
-    speech.provider = "browser";
+    useBrowser();
+    return;
   }
-  if (speech.provider !== "mac") return;
+  if (!ticket) {
+    useBrowser();
+    return;
+  }
 
-  // The token cannot ride in a header on a browser WebSocket, so the cookie
-  // does it. A device-token-only session falls back to the browser voice.
-  const url = getBase().replace(/^http/, "ws") + "/v1/voice/speak";
+  const url = `${getBase().replace(/^http/, "ws")}/v1/voice/speak?ticket=${encodeURIComponent(ticket)}`;
   try {
     ws = new WebSocket(url);
   } catch {
-    speech.provider = "browser";
+    useBrowser();
     return;
   }
   ws.binaryType = "arraybuffer";
   ws.onmessage = onFrame;
   ws.onclose = () => {
     ws = null;
-    speech.provider = "browser";
-    speech.speaking = false;
+    useBrowser();
   };
-  ws.onerror = () => {
-    speech.provider = "browser";
-  };
+  ws.onerror = () => useBrowser();
+
   await new Promise((res) => {
-    const t = setTimeout(res, 2500);
+    // If it has not opened by now it is not going to in time to be useful.
+    const t = setTimeout(() => {
+      useBrowser();
+      res();
+    }, 3000);
     ws.onopen = () => {
       clearTimeout(t);
-      // Anything said while the socket was still opening.
-      queued.splice(0).forEach((t2) => say(t2));
+      speech.provider = "mac";
+      flush();
       res();
     };
   });
+}
+
+/**
+ * Give up on the Mac and speak here instead.
+ *
+ * The important part is flushing: the first version set the provider and left
+ * whatever had been queued for the socket sitting there, so a rejected
+ * connection produced silence rather than a browser voice. Falling back has to
+ * mean saying the words, not just changing a label.
+ */
+function useBrowser() {
+  speech.provider = "browser";
+  const pending = queued.splice(0);
+  for (const t of pending) browserSay(forSpeech(t));
+}
+
+function flush() {
+  const pending = queued.splice(0);
+  for (const t of pending) say(t);
 }
 
 function onFrame(e) {

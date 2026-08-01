@@ -910,8 +910,19 @@ func main() {
 		voiceHub.ServeWorker(context.WithoutCancel(r.Context()), ws)
 	}))
 
-	// The phone listens here.
-	mux.Handle("GET /v1/voice/speak", authed(func(w http.ResponseWriter, r *http.Request) {
+	// A ticket to open the socket with. Authenticated normally; the socket
+	// itself cannot be, because new WebSocket() carries no headers.
+	mux.Handle("POST /v1/voice/ticket", authed(func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, 200, map[string]any{"ticket": voice.NewTicket()})
+	}))
+
+	// The phone listens here. Deliberately outside authed: a browser socket
+	// can only present what fits in a URL, so a single-use ticket stands in.
+	mux.Handle("GET /v1/voice/speak", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !voice.RedeemTicket(r.URL.Query().Get("ticket")) {
+			httpx.Err(w, 401, "unauthorized", "a fresh voice ticket is required")
+			return
+		}
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			OriginPatterns:  []string{cfg.RPID, "localhost:*"},
 			CompressionMode: websocket.CompressionDisabled,
