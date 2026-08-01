@@ -52,6 +52,13 @@ import (
 const maxChunkBytes = 8 << 20 // headroom over the 4MB FastCDC max
 
 func main() {
+	// A hidden mode, not a subcommand: the binary re-execs itself under an
+	// address-space limit to parse a PDF, so a malformed one cannot take the
+	// API down with it. See mail.PDFTextSafe.
+	if len(os.Args) > 1 && os.Args[1] == "-extract-pdf" {
+		os.Exit(mail.ExtractPDFMode())
+	}
+
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfg, err := config.Load()
@@ -1171,6 +1178,39 @@ func main() {
 		httpx.JSON(w, 200, map[string]any{
 			"papers": papers, "count": len(papers), "problems": problems,
 		})
+	}))
+
+	// Pull every paper for a course and keep it. Idempotent, so it can be
+	// re-run whenever a source publishes more.
+	mux.Handle("POST /v1/exam/reextract", authed(func(w http.ResponseWriter, r *http.Request) {
+		batch, _ := strconv.Atoi(r.URL.Query().Get("batch"))
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)
+		defer cancel()
+		res, err := examSvc.Reextract(ctx, batch)
+		if err != nil {
+			httpx.Err(w, 502, "reextract_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, res)
+	}))
+
+	mux.Handle("POST /v1/exam/import", authed(func(w http.ResponseWriter, r *http.Request) {
+		code := strings.TrimSpace(r.URL.Query().Get("code"))
+		subject := strings.TrimSpace(r.URL.Query().Get("subject"))
+		if code == "" && subject == "" {
+			httpx.Err(w, 400, "bad_request", "give a course code or a subject")
+			return
+		}
+		// Generous: this fetches and parses up to a hundred PDFs.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)
+		defer cancel()
+		batch, _ := strconv.Atoi(r.URL.Query().Get("batch"))
+		res, err := examSvc.Import(ctx, obj, code, subject, batch)
+		if err != nil {
+			httpx.Err(w, 500, "import_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, res)
 	}))
 
 	// ------------------------------------------------------------- subjects

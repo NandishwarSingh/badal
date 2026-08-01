@@ -138,3 +138,11 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+// PDFText exposes the extractor to other packages.
+//
+// Past papers arrive as PDFs and everything downstream -- searching them,
+// pulling individual questions out of them -- needs their text. Scanned
+// papers have no text layer and correctly yield nothing; that is OCR's job,
+// and the worker already does it.
+func PDFText(b []byte) (string, error) { return pdfText(b) }
