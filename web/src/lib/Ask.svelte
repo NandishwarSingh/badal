@@ -2,6 +2,7 @@
 	import { askStream } from '$lib/api.js';
 	import Icon from '$lib/Icon.svelte';
 	import { render } from '$lib/markdown.js';
+	import Mic from '$lib/Mic.svelte';
 
 	let { subjects = [] } = $props();
 
@@ -144,6 +145,15 @@
 		placeholder={turns.length ? 'Ask a follow-up…' : 'Ask about your notes, mail and tasks…'}
 		enterkeyhint="send"
 		aria-label="Ask a question"
+	/>
+	<Mic
+		disabled={busy}
+		ontext={(t) => {
+			// Straight to the question: holding a button to dictate and then
+			// having to press send as well is one gesture too many.
+			q = t;
+			ask();
+		}}
 	/>
 	{#if busy}
 		<button type="button" onclick={stop}>Stop</button>

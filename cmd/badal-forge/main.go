@@ -50,7 +50,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	kinds := []string{"ocr"}
+	// Advertised, not just handled. The server only leases a job to a worker
+	// that asked for its kind, so adding a case to the switch below without
+	// naming it here means the job is never claimed and quietly times out.
+	kinds := []string{"ocr", "transcribe"}
 	slog.Info("badal-forge starting", "api", *apiURL, "owner", *owner, "kinds", kinds)
 
 	sem := make(chan struct{}, *maxJobs)
@@ -120,6 +123,8 @@ func run(ctx context.Context, j job) {
 	switch j.Kind {
 	case "ocr":
 		result, err = doOCR(ctx, j.Payload)
+	case "transcribe":
+		result, err = doTranscribe(ctx, j.Payload)
 	default:
 		err = fmt.Errorf("unknown kind %q", j.Kind)
 	}

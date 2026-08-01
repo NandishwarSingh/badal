@@ -204,6 +204,13 @@ export const Tasks = {
 
 // In-app activity. Sits beside Web Push: the record survives a dismissed
 // banner, a denied permission, or an expired subscription.
+// Speech to text on the Mac. Returns 202 with queued=true when the Mac did
+// not pick it up, which is a real answer rather than a failure.
+export const Transcribe = {
+  send: (mime, base64) =>
+    api("/v1/transcribe", { method: "POST", body: { mime, audio: base64 } }),
+};
+
 export const Notifications = {
   list: (limit = 50) => api(`/v1/notifications?limit=${limit}`),
   unread: () => api("/v1/notifications/unread"),

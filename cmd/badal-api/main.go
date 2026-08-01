@@ -779,6 +779,52 @@ func main() {
 		}
 	}))
 
+	// Speech to text on the Mac. Unlike OCR there is no cloud fallback: this
+	// is you dictating a question about your own mail, and the whole reason
+	// it runs here is that the audio never leaves the machine.
+	mux.Handle("POST /v1/transcribe", authed(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			MIME  string `json:"mime"`
+			Audio string `json:"audio"` // base64
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 24<<20)).Decode(&in); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		if in.Audio == "" {
+			httpx.Err(w, 400, "bad_request", "no audio")
+			return
+		}
+		id, err := jobSvc.Enqueue(r.Context(), "transcribe", map[string]any{
+			"mime": in.MIME, "audio": in.Audio,
+		}, 1) // ahead of OCR: somebody is holding a button, waiting
+		if err != nil {
+			httpx.Err(w, 500, "enqueue_failed", err.Error())
+			return
+		}
+		// Long enough for a fanless Air to run small.en over a short clip,
+		// short enough that a sleeping Mac gives a clear answer instead of a
+		// hung request.
+		if raw, ok := jobSvc.Await(r.Context(), id, 75*time.Second); ok {
+			var res struct {
+				Text string `json:"text"`
+				Secs int    `json:"secs"`
+			}
+			if json.Unmarshal(raw, &res) == nil {
+				httpx.JSON(w, 200, map[string]any{"text": res.Text, "secs": res.Secs})
+				return
+			}
+		}
+		jobSvc.Supersede(r.Context(), id)
+		st, _ := jobSvc.Stats(r.Context())
+		httpx.JSON(w, http.StatusAccepted, map[string]any{
+			"text":   "",
+			"queued": true,
+			"online": st.Online,
+			"detail": "Your Mac did not pick this up. It transcribes when awake.",
+		})
+	}))
+
 	// ----------------------------------------------------------------- ask
 
 	// Server-sent events, not a WebSocket. The traffic is one-way and

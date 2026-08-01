@@ -2746,3 +2746,31 @@ select {
 .askq {
   margin-top: 6px;
 }
+
+/* Hold to speak. Recording is red and shows the elapsed seconds, so there
+   is never a doubt about whether it is listening. */
+.mic {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--muted);
+  /* Holding a button on a phone otherwise selects the text under it. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+.mic.rec {
+  background-color: var(--danger);
+  border-color: var(--danger);
+  color: #1a0606;
+}
+.rectime {
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
