@@ -26,6 +26,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/chunks"
 	"github.com/NandishwarSingh/badal/internal/config"
 	"github.com/NandishwarSingh/badal/internal/embed"
+	"github.com/NandishwarSingh/badal/internal/exam"
 	"github.com/NandishwarSingh/badal/internal/extract"
 	"github.com/NandishwarSingh/badal/internal/httpx"
 	"github.com/NandishwarSingh/badal/internal/jobs"
@@ -144,6 +145,7 @@ func main() {
 	taskSvc := tasks.New(st.Pool, feed)
 	notifySvc := notify.New(st.Pool)
 	voiceHub := voice.NewHub()
+	examSvc := exam.New(st.Pool)
 	jobSvc := jobs.New(st.Pool)
 	go jobSvc.RunReaper(ctx)
 	exSvc := extract.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"),
@@ -1130,6 +1132,45 @@ func main() {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// ----------------------------------------------------------- exam prep
+
+	// The catalogue, so a course code can be matched to the exact subject
+	// string the upstream API insists on, brackets and all.
+	mux.Handle("GET /v1/exam/subjects", authed(func(w http.ResponseWriter, r *http.Request) {
+		list, err := examSvc.Subjects(r.Context())
+		if err != nil {
+			httpx.Err(w, http.StatusBadGateway, "upstream_unavailable", err.Error())
+			return
+		}
+		q := strings.ToLower(r.URL.Query().Get("q"))
+		out := []string{}
+		for _, n := range list {
+			if q == "" || strings.Contains(strings.ToLower(n), q) {
+				out = append(out, n)
+			}
+		}
+		httpx.JSON(w, 200, map[string]any{"subjects": out, "total": len(list)})
+	}))
+
+	// Past papers from both sources. Partial results are returned with the
+	// problems alongside: one source being down should not hide the other.
+	mux.Handle("GET /v1/exam/papers", authed(func(w http.ResponseWriter, r *http.Request) {
+		code := strings.TrimSpace(r.URL.Query().Get("code"))
+		subject := strings.TrimSpace(r.URL.Query().Get("subject"))
+		if code == "" && subject == "" {
+			httpx.Err(w, 400, "bad_request", "give a course code or a subject")
+			return
+		}
+		papers, problems := examSvc.Find(r.Context(), code, subject)
+		if len(papers) == 0 && len(problems) > 0 {
+			httpx.Err(w, http.StatusBadGateway, "upstream_unavailable", strings.Join(problems, "; "))
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{
+			"papers": papers, "count": len(papers), "problems": problems,
+		})
 	}))
 
 	// ------------------------------------------------------------- subjects

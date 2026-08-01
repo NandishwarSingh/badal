@@ -70,6 +70,27 @@ the running order.
 | 17 | **Reminder by voice** | "Remind me to submit the form Friday" | S |
 | 18 | **Lecture mode** | A 90-minute recording becomes sectioned notes with jumpable timestamps | L |
 
+### Exam prep
+
+Added 1 Aug 2026, out of band: CAT-I is on the 8th. badal already holds the
+exam dates it extracted from mail, the tasks, the subjects and the search, so
+this is a planner over things that mostly exist rather than a new product.
+
+| # | Feature | You verify | Size |
+|---|---|---|---|
+| E1a | ✅ **Paper discovery** — both sources behind one endpoint | `/v1/exam/papers?code=…&subject=…` returns 73 for BMAT202L, 25 of them CAT-1 | S |
+| E1b | **Paper caching** — pull the PDFs into blob storage and index them | A paper opens offline and turns up in search | M |
+| E2 | **Timetable import** — a bookmarklet run on VTOP posts your schedule in | Your week appears, with a 20-minute commute either side of every class | S |
+| E3 | **Syllabus** — modules and topics per course, each with a confidence you set | Mark a module shaky and it gets more time | M |
+| E4 | **The plan** — study blocks generated into real free time, weighted by exam distance and confidence | A schedule that fits between classes and leaves evenings alone | L |
+| E5 | **Progress + balance** — blocks completed, topics covered, and a floor under labs, assignments and time off | It refuses to fill every hour, and says what it protected | M |
+
+Why a bookmarklet and not a login: VTOP has a captcha and short sessions, and
+reading cookies out of the browser store means touching the Keychain and every
+cookie for every site to get one timetable. A bookmarklet uses the session
+already in the tab, holds no password, and keeps working when the login
+changes.
+
 ### Connect it up
 
 | # | Feature | You verify | Size |
