@@ -155,6 +155,24 @@ different axes: eviction scores 4 and 1, voice out scores 1 and 5.
 | 31 | Templates | 2 | 1 | |
 | 11 | Fish Audio voice | 1 | 4 | Timbre. Strictly a nicety over #10 |
 
+### The groups, ranked
+
+A group is not the sum of its parts — you will never build all of one before
+touching another. What matters per group is the ceiling, what it is blocked
+on, and what it changes about what badal *is*.
+
+| | Group | Ceiling | Effort | Blocked by | What it changes |
+|---|---|---|---|---|---|
+| 1 | **Talk to it** (7–11) | 5/5 | ~1 wk | 9–11 need R1 | The corpus stops being something you search and starts being something you ask. Cashes in every week of retrieval work |
+| 2 | **Connect it up** (19–23) | 4/5 | ~1 wk | nothing | The corpus organises itself. Entirely server-side over embeddings that already exist |
+| 3 | **Capture** (12–18) | 5/5 | ~2 wk | R1 + a Whisper model | The corpus grows from more than mail. Highest ceiling, heaviest gate |
+| 4 | **Housekeeping** (4, 5, 30–33) | 5/2 | ~1 wk | nothing | Makes the app smaller and tidier. Never exciting, occasionally the right call |
+| 5 | **Files** (24–29) | 4/3 | ~1.5 wk | 29 needs the archive paid for | Turns a knowledge app into a cloud. Real work, low delight |
+
+**Capture ranks third but contains #15, which is 5/5 and barely gated** — the
+OCR it needs has been running on the Mac for weeks. Pull that one out and do
+it early rather than waiting for the group.
+
 ### If you want one line
 
 **Build 7.** Highest on both axes, everything it needs already exists, nothing
