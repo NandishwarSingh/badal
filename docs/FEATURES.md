@@ -173,6 +173,22 @@ on, and what it changes about what badal *is*.
 OCR it needs has been running on the Mac for weeks. Pull that one out and do
 it early rather than waiting for the group.
 
+### Agreed build order
+
+**1 → 3 → 5 → 2 → 4.** Talk to it, then Capture, then Files, then Connect,
+then Housekeeping.
+
+Consequences worth holding on to:
+
+- Capture second makes **R1 a hard blocker rather than a distant one**. The
+  useful half of that group needs the Mac awake between jobs.
+- Files third means the **cloud archive must be paid for before #29**, or an
+  evicted blob has exactly one copy.
+- Connect fourth costs nothing permanent: auto-linking is a backfill, so
+  everything captured in groups 3 and 5 gets linked retroactively when it
+  lands.
+- #15 still jumps its group. It is 5/5 and needs only OCR, which already runs.
+
 ### If you want one line
 
 **Build 7.** Highest on both axes, everything it needs already exists, nothing
