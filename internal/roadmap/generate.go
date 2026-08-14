@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -41,7 +43,10 @@ Rules:
 - Leaves must be specific and checkable ("Derive the normal equations for
   linear regression"), not vague ("understand regression").
 - Preserve the order of the material.
-- Use only what is in the text. Do not invent topics that are not there.`
+- Use only what is in the text. Do not invent topics that are not there.
+
+Respond ONLY with a JSON object of the form:
+{"items":[{"title":"...","kind":"topic|leaf","depth":0}]}`
 
 var genSchema = map[string]any{
 	"type": "object",
@@ -105,7 +110,9 @@ func (s *Service) generate(ctx context.Context, device, id uuid.UUID, uploads []
 		if strings.TrimSpace(md) == "" {
 			continue // no text layer; nothing to add from this file
 		}
-		merged.WriteString("\n\n# " + u.Filename + "\n\n")
+		// A comment, not a heading: it gives the model the document boundary
+		// without becoming a fake topic the coverage pass would then "recover".
+		merged.WriteString("\n\n<!-- source: " + u.Filename + " -->\n\n")
 		merged.WriteString(md)
 	}
 	full := strings.TrimSpace(merged.String())
@@ -116,23 +123,38 @@ func (s *Service) generate(ctx context.Context, device, id uuid.UUID, uploads []
 		full = full[:maxTotalChars]
 	}
 
-	// 2. Map: every chunk becomes items. The per-chunk "cover everything"
-	//    instruction is the first line of the coverage guarantee.
+	// 2. Map: every chunk becomes items. A chunk that fails is skipped rather
+	//    than aborting the whole roadmap -- the mechanical coverage pass below
+	//    re-reads the source headings, so a skipped chunk degrades to a flat
+	//    list of its topics instead of a lost roadmap.
+	chunks := splitByHeading(full, maxChunkChars)
 	var items []genItem
-	for _, chunk := range splitByHeading(full, maxChunkChars) {
+	failed := 0
+	for i, chunk := range chunks {
 		got, err := s.callMap(ctx, chunk)
 		if err != nil {
-			return Roadmap{}, err
+			failed++
+			slog.Warn("roadmap: chunk skipped", "chunk", i, "of", len(chunks), "err", err)
+			continue
 		}
 		items = append(items, got...)
+	}
+	// Every chunk failed and there is nothing to fall back on but headings --
+	// if there are none either, there was nothing usable in the documents.
+	if failed == len(chunks) && !headingRe.MatchString(full) {
+		return Roadmap{}, fmt.Errorf("the model could not read these documents (%d/%d chunks failed)", failed, len(chunks))
 	}
 	items = dedupe(items)
 
 	// 3. Coverage check, done mechanically so it does not depend on the model:
-	//    any source heading not represented in an item title is appended.
+	//    any source heading not represented in an item title is appended. This
+	//    is also what recovers the topics of any chunk that failed above.
 	items = appendMissing(items, full)
 	if len(items) == 0 {
 		return Roadmap{}, ErrNoDocs
+	}
+	if failed > 0 {
+		slog.Warn("roadmap built with skipped chunks", "failed", failed, "of", len(chunks), "items", len(items))
 	}
 
 	// 4. Persist the tree.
@@ -335,11 +357,41 @@ type chatMsg struct {
 	Content string `json:"content"`
 }
 
+// callMap asks the model to outline one chunk, retrying transient failures.
+// The last attempt drops strict json_schema for a plain json_object, in case
+// the schema mode is what a given provider is choking on.
 func (s *Service) callMap(ctx context.Context, chunk string) ([]genItem, error) {
-	rf, _ := json.Marshal(map[string]any{
-		"type":        "json_schema",
-		"json_schema": map[string]any{"name": "outline", "strict": true, "schema": genSchema},
-	})
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+		items, err := s.callOnce(ctx, chunk, attempt < 2)
+		if err == nil {
+			return items, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+func (s *Service) callOnce(ctx context.Context, chunk string, strict bool) ([]genItem, error) {
+	var rf json.RawMessage
+	if strict {
+		b, _ := json.Marshal(map[string]any{
+			"type":        "json_schema",
+			"json_schema": map[string]any{"name": "outline", "strict": true, "schema": genSchema},
+		})
+		rf = b
+	} else {
+		// Relaxed mode: ask for a JSON object; the prompt already specifies the
+		// exact shape.
+		rf = json.RawMessage(`{"type":"json_object"}`)
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"model": s.model,
 		"messages": []chatMsg{
@@ -347,7 +399,7 @@ func (s *Service) callMap(ctx context.Context, chunk string) ([]genItem, error) 
 			{Role: "user", Content: "MATERIAL:\n\n" + chunk},
 		},
 		"temperature":     0,
-		"response_format": json.RawMessage(rf),
+		"response_format": rf,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint, bytes.NewReader(payload))
 	if err != nil {
@@ -365,22 +417,39 @@ func (s *Service) callMap(ctx context.Context, chunk string) ([]genItem, error) 
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openrouter %d: %s", resp.StatusCode, trunc(string(raw), 200))
+		return nil, fmt.Errorf("openrouter status %d: %s", resp.StatusCode, trunc(string(raw), 300))
 	}
+	// OpenRouter can return 200 with an error envelope (rate limit, provider
+	// timeout, content filter). Capture it instead of the old opaque message.
 	var env struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+			Code    any    `json:"code"`
+		} `json:"error"`
 	}
-	if err := json.Unmarshal(raw, &env); err != nil || len(env.Choices) == 0 {
-		return nil, fmt.Errorf("bad openrouter response")
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("openrouter 200 unparseable envelope: %s", trunc(string(raw), 300))
+	}
+	if env.Error != nil {
+		return nil, fmt.Errorf("openrouter error: %s", env.Error.Message)
+	}
+	if len(env.Choices) == 0 {
+		return nil, fmt.Errorf("openrouter 200 with no choices: %s", trunc(string(raw), 300))
+	}
+	content := strings.TrimSpace(env.Choices[0].Message.Content)
+	if content == "" {
+		return nil, fmt.Errorf("openrouter 200 empty content (finish=%s)", env.Choices[0].FinishReason)
 	}
 	var parsed struct {
 		Items []genItem `json:"items"`
 	}
-	if err := json.Unmarshal([]byte(env.Choices[0].Message.Content), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return nil, fmt.Errorf("unparseable outline: %w", err)
 	}
 	return parsed.Items, nil
