@@ -42,6 +42,8 @@ import (
 	"github.com/NandishwarSingh/badal/internal/subjects"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
+	"github.com/NandishwarSingh/badal/internal/anydoc"
+	"github.com/NandishwarSingh/badal/internal/roadmap"
 	"github.com/NandishwarSingh/badal/internal/timetable"
 	"github.com/NandishwarSingh/badal/internal/tasks"
 	"github.com/NandishwarSingh/badal/internal/vision"
@@ -152,6 +154,8 @@ func main() {
 	chatSvc := chat.New(embSvc, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_CHAT_MODEL"))
 	taskSvc := tasks.New(st.Pool, feed)
 	ttSvc := timetable.New(st.Pool, feed)
+	rmSvc := roadmap.New(st.Pool, feed, anydoc.New(os.Getenv("BADAL_ANYDOC_CMD")),
+		os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_ROADMAP_MODEL"))
 	notifySvc := notify.New(st.Pool)
 	voiceHub := voice.NewHub()
 	examSvc := exam.New(st.Pool)
@@ -1195,6 +1199,123 @@ func main() {
 		if err := ttSvc.DeleteSlot(r.Context(), d.ID, id); err != nil {
 			if errors.Is(err, timetable.ErrNotFound) {
 				httpx.Err(w, 404, "not_found", "no such slot")
+				return
+			}
+			httpx.Err(w, 500, "delete_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// --------------------------------------------------------------- roadmaps
+
+	// Subject roadmaps: upload the topic PDFs, get a checkable tree. Generation
+	// (anydoc -> merge -> coverage-checked LLM) runs synchronously here, so a
+	// large upload holds the request open; the client shows a stepper.
+	mux.Handle("GET /v1/roadmaps", authed(func(w http.ResponseWriter, r *http.Request) {
+		list, err := rmSvc.List(r.Context())
+		if err != nil {
+			httpx.Err(w, 500, "roadmaps_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"roadmaps": list})
+	}))
+
+	mux.Handle("GET /v1/roadmaps/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		rm, err := rmSvc.Get(r.Context(), id)
+		if errors.Is(err, roadmap.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "no such roadmap")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "roadmap_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"roadmap": rm})
+	}))
+
+	mux.Handle("POST /v1/roadmaps", authed(func(w http.ResponseWriter, r *http.Request) {
+		if !rmSvc.Enabled() {
+			httpx.Err(w, 503, "disabled", "document parsing or the model is not configured")
+			return
+		}
+		d, _ := auth.DeviceFrom(r.Context())
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		subject := strings.TrimSpace(r.FormValue("subject"))
+		if subject == "" {
+			httpx.Err(w, 400, "bad_request", "subject is required")
+			return
+		}
+		title := strings.TrimSpace(r.FormValue("title"))
+		var ups []roadmap.Upload
+		if r.MultipartForm != nil {
+			for _, fh := range r.MultipartForm.File["files"] {
+				f, err := fh.Open()
+				if err != nil {
+					continue
+				}
+				data, _ := io.ReadAll(io.LimitReader(f, 25<<20))
+				f.Close()
+				ext := ""
+				if i := strings.LastIndex(fh.Filename, "."); i >= 0 {
+					ext = strings.ToLower(fh.Filename[i:])
+				}
+				ups = append(ups, roadmap.Upload{Filename: fh.Filename, Ext: ext, Data: data})
+			}
+		}
+		if len(ups) == 0 {
+			httpx.Err(w, 400, "bad_request", "attach at least one file")
+			return
+		}
+		rm, err := rmSvc.Create(r.Context(), d.ID, subject, title, ups)
+		if err != nil {
+			httpx.Err(w, 400, "roadmap_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"roadmap": rm})
+	}))
+
+	mux.Handle("POST /v1/roadmaps/{id}/items/{item}/state", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		itemID, err := uuid.Parse(r.PathValue("item"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		state := r.URL.Query().Get("state")
+		if state == "" {
+			state = "done"
+		}
+		it, err := rmSvc.SetItemState(r.Context(), d.ID, itemID, state)
+		if errors.Is(err, roadmap.ErrNotFound) {
+			httpx.Err(w, 404, "not_found", "no such item")
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 400, "state_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"item": it})
+	}))
+
+	mux.Handle("DELETE /v1/roadmaps/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		if err := rmSvc.Delete(r.Context(), d.ID, id); err != nil {
+			if errors.Is(err, roadmap.ErrNotFound) {
+				httpx.Err(w, 404, "not_found", "no such roadmap")
 				return
 			}
 			httpx.Err(w, 500, "delete_failed", err.Error())

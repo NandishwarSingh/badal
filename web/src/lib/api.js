@@ -202,6 +202,42 @@ export const Tasks = {
   del: (id) => api(`/v1/tasks/${id}`, { method: "DELETE" }),
 };
 
+// Roadmaps: subject PDFs turned into a checkable tree. Create is multipart
+// (the files ride along), so it bypasses the JSON helper; everything else is
+// ordinary JSON.
+export const Roadmaps = {
+  list: () => api("/v1/roadmaps"),
+  get: (id) => api(`/v1/roadmaps/${id}`),
+  itemState: (id, itemId, state) =>
+    api(`/v1/roadmaps/${id}/items/${itemId}/state?state=${state}`, {
+      method: "POST",
+    }),
+  del: (id) => api(`/v1/roadmaps/${id}`, { method: "DELETE" }),
+  // Upload one or more files under a subject; the server parses and generates
+  // synchronously, so this awaits the finished roadmap.
+  create: async (subject, title, files) => {
+    const fd = new FormData();
+    fd.append("subject", subject);
+    if (title) fd.append("title", title);
+    for (const f of files) fd.append("files", f, f.name);
+    const res = await fetch(getBase() + "/v1/roadmaps", {
+      method: "POST",
+      credentials: "include",
+      headers: { Authorization: "Bearer " + getToken() },
+      body: fd,
+    });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      /* non-JSON */
+    }
+    if (!res.ok) throw new ApiError(res.status, json, getBase() + "/v1/roadmaps");
+    return json;
+  },
+};
+
 // Timetable: the recurring weekly schedule. Slot ids are generated on the
 // client, like tasks, so a slot edited offline already carries the identity
 // the server will store it under.
