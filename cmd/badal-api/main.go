@@ -42,6 +42,7 @@ import (
 	"github.com/NandishwarSingh/badal/internal/subjects"
 	"github.com/NandishwarSingh/badal/internal/surreal"
 	"github.com/NandishwarSingh/badal/internal/syncfeed"
+	"github.com/NandishwarSingh/badal/internal/timetable"
 	"github.com/NandishwarSingh/badal/internal/tasks"
 	"github.com/NandishwarSingh/badal/internal/vision"
 	"github.com/NandishwarSingh/badal/internal/voice"
@@ -150,6 +151,7 @@ func main() {
 	subjSvc := subjects.New(st.Pool, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_TAG_MODEL"))
 	chatSvc := chat.New(embSvc, os.Getenv("BADAL_OPENROUTER_KEY"), os.Getenv("BADAL_CHAT_MODEL"))
 	taskSvc := tasks.New(st.Pool, feed)
+	ttSvc := timetable.New(st.Pool, feed)
 	notifySvc := notify.New(st.Pool)
 	voiceHub := voice.NewHub()
 	examSvc := exam.New(st.Pool)
@@ -1133,6 +1135,66 @@ func main() {
 		if err := taskSvc.Delete(r.Context(), d.ID, id); err != nil {
 			if errors.Is(err, tasks.ErrNotFound) {
 				httpx.Err(w, 404, "not_found", "no such task")
+				return
+			}
+			httpx.Err(w, 500, "delete_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// -------------------------------------------------------------- timetable
+
+	// The recurring weekly schedule. GET returns the active term and all its
+	// live slots in one shot -- the whole thing is small and the client caches
+	// it for offline, so there is no per-day endpoint.
+	mux.Handle("GET /v1/timetable", authed(func(w http.ResponseWriter, r *http.Request) {
+		tt, slots, err := ttSvc.Active(r.Context())
+		if errors.Is(err, timetable.ErrNoActive) {
+			// Not an error the UI should shout about: a fresh account simply
+			// has no timetable yet, so hand back an empty one.
+			httpx.JSON(w, 200, map[string]any{"timetable": nil, "slots": []any{}})
+			return
+		}
+		if err != nil {
+			httpx.Err(w, 500, "timetable_failed", err.Error())
+			return
+		}
+		httpx.JSON(w, 200, map[string]any{"timetable": tt, "slots": slots})
+	}))
+
+	mux.Handle("PUT /v1/timetable/slots", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		var in timetable.PutSlotInput
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			httpx.Err(w, 400, "bad_request", err.Error())
+			return
+		}
+		slot, err := ttSvc.PutSlot(r.Context(), d.ID, in)
+		switch {
+		case errors.Is(err, timetable.ErrNoActive):
+			httpx.Err(w, 409, "no_timetable", "no active timetable to add to")
+		case errors.Is(err, timetable.ErrConflict):
+			httpx.Err(w, 409, "version_conflict", "slot changed elsewhere; reload")
+		case errors.Is(err, timetable.ErrNotFound):
+			httpx.Err(w, 404, "not_found", "no such slot")
+		case err != nil:
+			httpx.Err(w, 400, "slot_failed", err.Error())
+		default:
+			httpx.JSON(w, 200, map[string]any{"slot": slot})
+		}
+	}))
+
+	mux.Handle("DELETE /v1/timetable/slots/{id}", authed(func(w http.ResponseWriter, r *http.Request) {
+		d, _ := auth.DeviceFrom(r.Context())
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			httpx.Err(w, 400, "bad_request", "invalid id")
+			return
+		}
+		if err := ttSvc.DeleteSlot(r.Context(), d.ID, id); err != nil {
+			if errors.Is(err, timetable.ErrNotFound) {
+				httpx.Err(w, 404, "not_found", "no such slot")
 				return
 			}
 			httpx.Err(w, 500, "delete_failed", err.Error())

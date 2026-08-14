@@ -8,13 +8,17 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Tasks, Notifications } from '$lib/api.js';
-	import { taskCache } from '$lib/store.js';
+	import { Tasks, Notifications, Timetable as TimetableApi } from '$lib/api.js';
+	import { taskCache, timetableCache } from '$lib/store.js';
 	import { state as sync, queueTask, queueTaskDelete } from '$lib/sync.svelte.js';
 	import { toast } from '$lib/toast.svelte.js';
 	import TaskSheet from '$lib/TaskSheet.svelte';
 	import Icon from '$lib/Icon.svelte';
 	import ActivitySheet from '$lib/ActivitySheet.svelte';
+	import TimetableToday from '$lib/Timetable.svelte';
+	import TimetableWeek from '$lib/TimetableWeek.svelte';
+	import SlotSheet from '$lib/SlotSheet.svelte';
+	import { nowIn } from '$lib/timetime.js';
 
 	let view = $state('open'); // open | today | done
 	let tasks = $state([]);
@@ -24,6 +28,30 @@
 	let sheet = $state(null);
 	let unread = $state(0);
 	let activity = $state(null);
+
+	// Timetable: the recurring schedule sits above tasks. Today or the whole
+	// week, and a slot opens the same kind of sheet a task does.
+	let ttSlots = $state([]);
+	let ttTz = $state('Asia/Kolkata');
+	let ttMode = $state('today'); // today | week
+	let slotSheet = $state(null);
+
+	async function loadTimetable() {
+		const local = await timetableCache.all();
+		if (local.length) ttSlots = local;
+		try {
+			const res = await TimetableApi.get();
+			ttSlots = res.slots || [];
+			ttTz = res.timetable?.tz || ttTz;
+			await timetableCache.replaceAll(ttSlots);
+		} catch {
+			// Offline: the cache is already showing, which is the point.
+		}
+	}
+
+	function addSlot() {
+		slotSheet = { day_of_week: nowIn(ttTz).dow, kind: 'class' };
+	}
 
 	async function refreshUnread() {
 		try {
@@ -87,6 +115,7 @@
 		// Settings. The server's answer is the only authoritative one, so
 		// load() decides: a 401 redirects, anything else does not.
 		load();
+		loadTimetable();
 		refreshUnread();
 		// Poll rather than hold a socket open: one indexed count every couple
 		// of minutes costs nothing, and a reminder that fires while the app is
@@ -205,6 +234,27 @@
 	</button>
 </div>
 
+{#if ttSlots.length}
+	<section class="ttsec">
+		<div class="ttbar">
+			<div class="seg ttseg">
+				<button class:on={ttMode === 'today'} onclick={() => (ttMode = 'today')}>Today</button>
+				<button class:on={ttMode === 'week'} onclick={() => (ttMode = 'week')}>Week</button>
+			</div>
+			<span class="spacer"></span>
+			<button class="iconbtn" onclick={addSlot} aria-label="Add a block">
+				<svg viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14" /></svg>
+			</button>
+		</div>
+		{#if ttMode === 'today'}
+			<TimetableToday slots={ttSlots} tz={ttTz} onedit={(s) => (slotSheet = s)} />
+		{:else}
+			<TimetableWeek slots={ttSlots} tz={ttTz} onedit={(s) => (slotSheet = s)} />
+		{/if}
+	</section>
+	<div class="tttasks">Tasks</div>
+{/if}
+
 <div class="seg">
 	<button class:on={view === 'open'} onclick={() => setView('open')}>All</button>
 	<button class:on={view === 'today'} onclick={() => setView('today')}>
@@ -297,3 +347,30 @@
 		}}
 	/>
 {/if}
+
+{#if slotSheet}
+	<SlotSheet
+		slot={slotSheet}
+		onclose={() => (slotSheet = null)}
+		onsaved={() => {
+			slotSheet = null;
+			loadTimetable();
+		}}
+		ondeleted={(id) => {
+			slotSheet = null;
+			ttSlots = ttSlots.filter((x) => x.id !== id);
+		}}
+	/>
+{/if}
+
+<style>
+	.ttsec { margin-bottom: 6px; }
+	.ttbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+	/* Compact toggle on the left; the global .seg would otherwise stretch full
+	   width. Two classes here beat the single-class global rule. */
+	.ttseg { flex: 0 0 auto; width: 158px; margin-bottom: 0; }
+	.tttasks {
+		font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+		color: var(--dim); font-weight: 700; margin: 20px 0 9px;
+	}
+</style>

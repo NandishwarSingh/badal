@@ -35,6 +35,7 @@ the running order.
 | Streaming chat with citations, query expansion, turn memory | `internal/chat`, `web/src/lib/Ask.svelte` |
 | Voice in — hold to speak, Whisper on the Mac, nothing leaves it | `cmd/badal-forge/transcribe.go`, `Mic.svelte` |
 | Voice out — Kokoro over a websocket relay, browser fallback, barge-in | `internal/voice`, `deploy/mac/badal-tts.py`, `speech.svelte.js` |
+| Timetable — recurring weekly classes + study blocks in Now, live now/next | `internal/timetable`, `web/src/lib/Timetable.svelte`, `TimetableWeek.svelte`, `SlotSheet.svelte` |
 
 ---
 

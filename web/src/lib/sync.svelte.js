@@ -4,8 +4,8 @@
 // local edits by the time we pull, so we never briefly overwrite our own work
 // with a stale server copy.
 
-import { Notes, Tasks, Sync, ApiError } from "./api.js";
-import { cache, taskCache, outbox, meta } from "./store.js";
+import { Notes, Tasks, Timetable, Sync, ApiError } from "./api.js";
+import { cache, taskCache, timetableCache, outbox, meta } from "./store.js";
 
 export const state = $state({
   online: typeof navigator !== "undefined" ? navigator.onLine : true,
@@ -65,6 +65,24 @@ export async function queueTaskDelete(id) {
   if (state.online) void run();
 }
 
+// Timetable slots queue exactly like tasks: cache first so the grid updates on
+// tap, and a client-generated id keeps the outbox entry valid offline.
+export async function queueSlot(slot) {
+  const local = { ...slot, _dirty: true, updated_at: new Date().toISOString() };
+  await timetableCache.put(local);
+  await outbox.add({ entity: "slot", kind: "put", slotId: slot.id, payload: slot });
+  await refreshPending();
+  if (state.online) void run();
+  return local;
+}
+
+export async function queueSlotDelete(id) {
+  await timetableCache.del(id);
+  await outbox.add({ entity: "slot", kind: "del", slotId: id });
+  await refreshPending();
+  if (state.online) void run();
+}
+
 let running = false;
 
 export async function run() {
@@ -99,6 +117,18 @@ async function push() {
           await taskCache.put({ ...saved.task, _dirty: false });
         } else {
           await Tasks.del(item.taskId).catch((e) => {
+            if (!(e instanceof ApiError && e.status === 404)) throw e;
+          });
+        }
+        await outbox.remove(item.id);
+        continue;
+      }
+      if (item.entity === "slot") {
+        if (item.kind === "put") {
+          const saved = await Timetable.putSlot(item.payload);
+          await timetableCache.put({ ...saved.slot, _dirty: false });
+        } else {
+          await Timetable.delSlot(item.slotId).catch((e) => {
             if (!(e instanceof ApiError && e.status === 404)) throw e;
           });
         }
@@ -151,10 +181,8 @@ async function pull() {
   let cursor = await meta.get("cursor", 0);
   for (let guard = 0; guard < 50; guard++) {
     const res = await Sync.since(cursor);
-    const noteChanges = (res.changes || []).filter(
-      (c) => c.entity_type === "note",
-    );
-    if (noteChanges.length) {
+    const changes = res.changes || [];
+    if (changes.some((c) => c.entity_type === "note")) {
       // The feed carries ids, not content -- it is a doorbell. Fetch the
       // full list once rather than N times for N changes.
       const list = await Notes.list();
@@ -162,6 +190,16 @@ async function pull() {
       await cache.putMany(
         (list.notes || []).map((n) => ({ ...n, _dirty: false })),
       );
+    }
+    if (changes.some((c) => c.entity_type === "timetable_slot")) {
+      // Same doorbell: one slot changed on another device, so refetch the
+      // whole (small) timetable rather than reconciling per slot.
+      const tt = await Timetable.get().catch(() => null);
+      if (tt) {
+        await timetableCache.replaceAll(
+          (tt.slots || []).map((s) => ({ ...s, _dirty: false })),
+        );
+      }
     }
     cursor = res.cursor ?? cursor;
     await meta.set("cursor", cursor);

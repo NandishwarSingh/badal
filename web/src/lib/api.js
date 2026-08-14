@@ -202,6 +202,17 @@ export const Tasks = {
   del: (id) => api(`/v1/tasks/${id}`, { method: "DELETE" }),
 };
 
+// Timetable: the recurring weekly schedule. Slot ids are generated on the
+// client, like tasks, so a slot edited offline already carries the identity
+// the server will store it under.
+export const Timetable = {
+  get: () => api("/v1/timetable"),
+  putSlot: (slot) =>
+    api("/v1/timetable/slots", { method: "PUT", body: slot }),
+  delSlot: (id) =>
+    api(`/v1/timetable/slots/${id}`, { method: "DELETE" }),
+};
+
 // In-app activity. Sits beside Web Push: the record survives a dismissed
 // banner, a denied permission, or an expired subscription.
 // Speech to text on the Mac. Returns 202 with queued=true when the Mac did

@@ -5,7 +5,7 @@
 // this database, the cost is a re-sync, not data loss.
 
 const DB_NAME = "badal";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbp = null;
 
@@ -31,6 +31,11 @@ function open() {
       }
       if (!db.objectStoreNames.contains("meta")) {
         db.createObjectStore("meta", { keyPath: "k" });
+      }
+      // Timetable slots, keyed by the same client-generated uuid so an edit
+      // made offline already owns the identity the server will accept.
+      if (!db.objectStoreNames.contains("timetable")) {
+        db.createObjectStore("timetable", { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -147,6 +152,21 @@ export const taskCache = {
   // tasks deleted on another device, since a deletion is an absence here.
   replaceAll: (list) =>
     tx("tasks", "readwrite", (s) => {
+      s.clear();
+      list.forEach((t) => s.put(t));
+    }),
+};
+
+// -------------------------------------------------------------- timetable
+
+export const timetableCache = {
+  all: () => all("timetable"),
+  put: (slot) => tx("timetable", "readwrite", (s) => s.put(slot)),
+  del: (id) => tx("timetable", "readwrite", (s) => s.delete(id)),
+  // Wholesale replace, same reasoning as tasks: a slot deleted elsewhere is an
+  // absence in the server's list, and merging would bring it back.
+  replaceAll: (list) =>
+    tx("timetable", "readwrite", (s) => {
       s.clear();
       list.forEach((t) => s.put(t));
     }),
