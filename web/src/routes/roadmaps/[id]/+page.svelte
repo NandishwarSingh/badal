@@ -74,11 +74,30 @@
 		items = items.map((x) => (x.id === itemId ? { ...x, state: next } : x));
 		try {
 			await Roadmaps.itemState(id, itemId, next);
-			await meta.set('roadmap:' + id, { ...rm, items });
 		} catch {
+			// Only a genuinely failed save reverts the tick.
 			items = items.map((x) => (x.id === itemId ? { ...x, state: it.state } : x));
 			toast('Could not save — try again online');
+			return;
 		}
+		// Cache is best-effort and must never revert the UI. $state.snapshot
+		// unwraps the reactive proxy, which IndexedDB cannot structured-clone.
+		meta.set('roadmap:' + id, $state.snapshot({ ...rm, items })).catch(() => {});
+	}
+
+	async function removeRoadmap() {
+		if (!confirm('Delete this roadmap and its checklist?')) return;
+		try {
+			await Roadmaps.del(id);
+		} catch (e) {
+			if (e?.status !== 404) {
+				toast('Could not delete — try again online');
+				return;
+			}
+		}
+		await meta.set('roadmap:' + id, null).catch(() => {});
+		toast('Roadmap deleted');
+		goto('/roadmaps');
 	}
 </script>
 
@@ -90,6 +109,12 @@
 		{rm?.title || 'Roadmap'}
 		{#if rm?.status === 'ready'}<span class="sub">{done}/{leaves} · {pct}%</span>{/if}
 	</h1>
+	<span class="spacer"></span>
+	{#if rm}
+		<button class="iconbtn" onclick={removeRoadmap} aria-label="Delete roadmap">
+			<svg viewBox="0 0 24 24"><path d="M5 7h14 M9 7V5h6v2 M8 7l1 13h6l1-13" /></svg>
+		</button>
+	{/if}
 </div>
 
 {#if rm?.status === 'ready' && leaves}

@@ -25,7 +25,7 @@
 			slots = res.slots || [];
 			tz = res.timetable?.tz || tz;
 			clock = nowIn(tz);
-			await timetableCache.replaceAll(slots);
+			await timetableCache.replaceAll($state.snapshot(slots));
 		} catch {
 			// Offline: the cache is already on screen.
 		}

@@ -4,7 +4,9 @@
 	import Icon from '$lib/Icon.svelte';
 	import Self from '$lib/RoadmapNode.svelte';
 	let { node, ontick } = $props();
-	let open = $state(true);
+	// Collapsed by default; only the top level opens so the shape is visible
+	// without a wall of items. A tap keeps that branch open while you're here.
+	let open = $state(node.depth === 0);
 </script>
 
 <div class="rnode" style="padding-left:{Math.min(node.depth, 4) * 15}px">

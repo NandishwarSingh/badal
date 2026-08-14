@@ -24,7 +24,8 @@
 		try {
 			const res = await Roadmaps.list();
 			list = res.roadmaps || [];
-			await meta.set('roadmaps', list);
+			// snapshot: hand IndexedDB a plain value, not the reactive proxy.
+			await meta.set('roadmaps', $state.snapshot(list));
 		} catch {
 			// offline: cache already shown
 		} finally {
