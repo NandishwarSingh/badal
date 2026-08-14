@@ -46,8 +46,9 @@
 			if (it.parent_id && byId.has(it.parent_id)) byId.get(it.parent_id).children.push(n);
 			else top.push(n);
 		}
+		// A node is a leaf iff it has no children -- structure, not stored kind.
 		const roll = (n) => {
-			if (n.kind === 'leaf') {
+			if (n.children.length === 0) {
 				n.leaves = 1;
 				n.done = n.state === 'done' ? 1 : 0;
 			} else {
@@ -63,8 +64,13 @@
 		return top;
 	});
 
-	const leaves = $derived(items.filter((i) => i.kind === 'leaf').length);
-	const done = $derived(items.filter((i) => i.kind === 'leaf' && i.state === 'done').length);
+	// Leaves are the items that are nobody's parent.
+	const leafIds = $derived.by(() => {
+		const parents = new Set(items.map((i) => i.parent_id).filter(Boolean));
+		return new Set(items.filter((i) => !parents.has(i.id)).map((i) => i.id));
+	});
+	const leaves = $derived(leafIds.size);
+	const done = $derived(items.filter((i) => leafIds.has(i.id) && i.state === 'done').length);
 	const pct = $derived(leaves ? Math.round((done / leaves) * 100) : 0);
 
 	async function tick(itemId) {

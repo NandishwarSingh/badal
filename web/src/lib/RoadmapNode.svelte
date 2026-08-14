@@ -1,16 +1,17 @@
 <script>
-	// One node of a roadmap. A topic groups and can collapse; a leaf is the
-	// thing you tick. Renders itself for children.
+	// One node of a roadmap. Whether it is a section or a checkable item is
+	// decided by whether it HAS CHILDREN, never by a stored flag -- so a section
+	// always expands to something and every leaf is tickable. This also heals
+	// older roadmaps whose stored kind disagreed with their structure.
 	import Icon from '$lib/Icon.svelte';
 	import Self from '$lib/RoadmapNode.svelte';
 	let { node, ontick } = $props();
-	// Collapsed by default; only the top level opens so the shape is visible
-	// without a wall of items. A tap keeps that branch open while you're here.
+	const isBranch = $derived((node.children?.length ?? 0) > 0);
 	let open = $state(node.depth === 0);
 </script>
 
 <div class="rnode" style="padding-left:{Math.min(node.depth, 4) * 15}px">
-	{#if node.kind === 'topic'}
+	{#if isBranch}
 		<button class="rtopic" onclick={() => (open = !open)} aria-expanded={open}>
 			<span class="rchev" class:open>
 				<Icon name="chevron" size={13} stroke={2.2} />

@@ -10,72 +10,93 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 const (
-	maxChunkChars = 8000
-	maxTotalChars = 64000 // ~8 chunks; bounds cost and time on the 1-vCPU VPS
+	maxTotalChars   = 200000 // cap the merged document we will parse
+	maxSectionChars = 6000   // per-section body sent to the model
+	maxLeafSections = 80     // bound the number of model calls
+	maxItems        = 600    // bound total tree size
+	genConcurrency  = 4      // parallel per-section extractions
 )
 
-// genItem is one line the model returns: a flat, depth-tagged outline.
-type genItem struct {
-	Title string `json:"title"`
-	Kind  string `json:"kind"`  // topic | leaf
-	Depth int    `json:"depth"` // 0 unit, 1 topic, 2 subtopic/leaf
+// treeNode is the assembled roadmap before it hits the database. kind is never
+// stored from here -- persistTree derives it from whether a node has children,
+// which is the whole point of the redesign: a branch always has children, a
+// leaf never does, so "empty dropdown" and "leaf hiding its children" cannot
+// happen.
+type treeNode struct {
+	Title    string
+	Children []*treeNode
 }
 
-const sysPrompt = `You convert a university course's study material into an
-exhaustive revision checklist.
+// ------------------------------------------------------------ heading parse
 
-Output a FLAT, ORDERED outline as "items", each with:
-- depth: 0 for a module/unit, 1 for a topic, 2 for a subtopic or specific item
-- kind: "topic" for a heading that groups things below it, "leaf" for a concrete
-  thing to study, revise, derive or practise
-- title: short and specific
+var headingRe = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
+var commentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
 
-Rules:
-- COVER EVERYTHING. Every heading, definition, theorem, algorithm, formula,
-  method and named concept in the text becomes an item. Never summarise detail
-  away or merge distinct topics.
-- Leaves must be specific and checkable ("Derive the normal equations for
-  linear regression"), not vague ("understand regression").
-- Preserve the order of the material.
-- Use only what is in the text. Do not invent topics that are not there.
-
-Respond ONLY with a JSON object of the form:
-{"items":[{"title":"...","kind":"topic|leaf","depth":0}]}`
-
-var genSchema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"items": map[string]any{
-			"type": "array",
-			"items": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"title": map[string]any{"type": "string"},
-					"kind":  map[string]any{"type": "string", "enum": []string{"topic", "leaf"}},
-					"depth": map[string]any{"type": "integer"},
-				},
-				"required":             []string{"title", "kind", "depth"},
-				"additionalProperties": false,
-			},
-		},
-	},
-	"required":             []string{"items"},
-	"additionalProperties": false,
+// section is a node of the document's own heading hierarchy. This structure is
+// deterministic -- it comes from the Markdown, not the model -- so it is always
+// internally consistent.
+type section struct {
+	level    int
+	title    string
+	body     strings.Builder
+	children []*section
 }
 
-// Create runs the whole pipeline synchronously and stores the result.
+// parseSections turns Markdown into its heading tree. A heading's parent is the
+// nearest preceding heading of a lower level; text lives on the section it
+// falls under. A synthetic level-0 root holds the top-level headings (and any
+// preamble text for the no-heading fallback).
+func parseSections(md string) *section {
+	root := &section{level: 0}
+	stack := []*section{root}
+	for _, line := range strings.Split(md, "\n") {
+		if m := headingRe.FindStringSubmatch(line); m != nil {
+			lvl := len(m[1])
+			node := &section{level: lvl, title: strings.TrimSpace(m[2])}
+			for len(stack) > 1 && stack[len(stack)-1].level >= lvl {
+				stack = stack[:len(stack)-1]
+			}
+			parent := stack[len(stack)-1]
+			parent.children = append(parent.children, node)
+			stack = append(stack, node)
+			continue
+		}
+		stack[len(stack)-1].body.WriteString(line + "\n")
+	}
+	return root
+}
+
+func cleanBody(s string) string {
+	s = commentRe.ReplaceAllString(s, "")
+	s = strings.TrimSpace(s)
+	if len(s) > maxSectionChars {
+		s = s[:maxSectionChars]
+	}
+	return s
+}
+
+// meaningful decides whether a leaf section's body is worth a model call.
+func meaningful(s string) bool {
+	return len(strings.Fields(s)) >= 6
+}
+
+// ------------------------------------------------------------------ create
+
+// Create runs the pipeline synchronously and stores the result. A recover
+// guard and a background-context failure write mean a panic or a cancelled
+// request can never strand the row in 'processing'.
 func (s *Service) Create(ctx context.Context, device uuid.UUID, subject, title string, uploads []Upload) (Roadmap, error) {
 	if strings.TrimSpace(title) == "" {
 		title = subject
 	}
-	// The roadmap row exists immediately in 'processing', so a slow generation
-	// still leaves something the client can show and poll.
 	var id uuid.UUID
 	hlc := s.feed.Clock.Now()
 	if err := s.pool.QueryRow(ctx, `
@@ -85,19 +106,31 @@ func (s *Service) Create(ctx context.Context, device uuid.UUID, subject, title s
 		return Roadmap{}, err
 	}
 
-	rm, genErr := s.generate(ctx, device, id, uploads)
+	rm, genErr := s.safeGenerate(ctx, device, id, uploads)
 	if genErr != nil {
-		_, _ = s.pool.Exec(ctx,
+		bg, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = s.pool.Exec(bg,
 			`UPDATE roadmaps SET status='failed', error=$2, updated_at=now() WHERE id=$1`,
 			id, genErr.Error())
-		return s.Get(ctx, id)
+		return s.Get(bg, id)
 	}
 	return rm, nil
 }
 
+func (s *Service) safeGenerate(ctx context.Context, device, id uuid.UUID, uploads []Upload) (rm Roadmap, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("roadmap generation panicked", "id", id, "panic", r)
+			err = fmt.Errorf("internal error while building the roadmap")
+		}
+	}()
+	return s.generate(ctx, device, id, uploads)
+}
+
 func (s *Service) generate(ctx context.Context, device, id uuid.UUID, uploads []Upload) (Roadmap, error) {
-	// 1. anydoc each upload to Markdown. Empty text means a scanned/image PDF
-	//    with no text layer -- recorded, not silently dropped.
+	// 1. anydoc each upload to Markdown; record every source. Empty output is a
+	//    scanned/image PDF with no text layer.
 	var merged strings.Builder
 	for _, u := range uploads {
 		md, err := s.anydoc.ConvertBytes(ctx, u.Data, u.Ext)
@@ -108,10 +141,8 @@ func (s *Service) generate(ctx context.Context, device, id uuid.UUID, uploads []
 			`INSERT INTO roadmap_sources (roadmap_id, filename, bytes) VALUES ($1,$2,$3)`,
 			id, u.Filename, len(u.Data))
 		if strings.TrimSpace(md) == "" {
-			continue // no text layer; nothing to add from this file
+			continue
 		}
-		// A comment, not a heading: it gives the model the document boundary
-		// without becoming a fake topic the coverage pass would then "recover".
 		merged.WriteString("\n\n<!-- source: " + u.Filename + " -->\n\n")
 		merged.WriteString(md)
 	}
@@ -123,99 +154,175 @@ func (s *Service) generate(ctx context.Context, device, id uuid.UUID, uploads []
 		full = full[:maxTotalChars]
 	}
 
-	// 2. Map: every chunk becomes items. A chunk that fails is skipped rather
-	//    than aborting the whole roadmap -- the mechanical coverage pass below
-	//    re-reads the source headings, so a skipped chunk degrades to a flat
-	//    list of its topics instead of a lost roadmap.
-	chunks := splitByHeading(full, maxChunkChars)
-	var items []genItem
-	failed := 0
-	for i, chunk := range chunks {
-		got, err := s.callMap(ctx, chunk)
-		if err != nil {
-			failed++
-			slog.Warn("roadmap: chunk skipped", "chunk", i, "of", len(chunks), "err", err)
-			continue
-		}
-		items = append(items, got...)
-	}
-	// Every chunk failed and there is nothing to fall back on but headings --
-	// if there are none either, there was nothing usable in the documents.
-	if failed == len(chunks) && !headingRe.MatchString(full) {
-		return Roadmap{}, fmt.Errorf("the model could not read these documents (%d/%d chunks failed)", failed, len(chunks))
-	}
-	items = dedupe(items)
+	// 2. The document's heading hierarchy is the tree skeleton.
+	root := parseSections(full)
 
-	// 3. Coverage check, done mechanically so it does not depend on the model:
-	//    any source heading not represented in an item title is appended. This
-	//    is also what recovers the topics of any chunk that failed above.
-	items = appendMissing(items, full)
-	if len(items) == 0 {
+	// 3. Turn each leaf section's body into checkable items (in parallel), then
+	//    assemble. Structure comes from headings; the model only writes leaves.
+	roots, total, err := s.assemble(ctx, root)
+	if err != nil {
+		return Roadmap{}, err
+	}
+	if total == 0 || len(roots) == 0 {
 		return Roadmap{}, ErrNoDocs
 	}
-	if failed > 0 {
-		slog.Warn("roadmap built with skipped chunks", "failed", failed, "of", len(chunks), "items", len(items))
-	}
 
-	// 4. Persist the tree.
-	if err := s.persist(ctx, device, id, items); err != nil {
+	// 4. Persist, deriving kind from structure.
+	if err := s.persistTree(ctx, device, id, roots, total); err != nil {
 		return Roadmap{}, err
 	}
 	return s.Get(ctx, id)
 }
 
-// persist assembles the flat depth list into parent-linked rows.
-func (s *Service) persist(ctx context.Context, device, id uuid.UUID, items []genItem) error {
+// assemble collects the leaf sections, extracts their items concurrently, and
+// builds the tree. A section with sub-headings is a pure branch; a leaf section
+// becomes (heading -> its items), or a single leaf if it has no usable items.
+func (s *Service) assemble(ctx context.Context, root *section) ([]*treeNode, int, error) {
+	var leaves []*section
+	var collect func(*section)
+	collect = func(sec *section) {
+		if len(sec.children) == 0 {
+			if meaningful(cleanBody(sec.body.String())) {
+				leaves = append(leaves, sec)
+			}
+			return
+		}
+		for _, c := range sec.children {
+			collect(c)
+		}
+	}
+	noHeadings := len(root.children) == 0
+	if noHeadings {
+		// A document anydoc gave no headings for: treat the whole thing as one
+		// section and produce a flat, complete list.
+		if meaningful(cleanBody(root.body.String())) {
+			leaves = []*section{root}
+		}
+	} else {
+		for _, c := range root.children {
+			collect(c)
+		}
+	}
+	if len(leaves) > maxLeafSections {
+		leaves = leaves[:maxLeafSections]
+	}
+
+	// Extract items for each leaf section, bounded concurrency. A section that
+	// fails is left without items -- it degrades to a single leaf, never a lost
+	// roadmap.
+	itemsBy := make(map[*section][]string, len(leaves))
+	var mu sync.Mutex
+	var failed int32
+	sem := make(chan struct{}, genConcurrency)
+	var wg sync.WaitGroup
+	for _, sec := range leaves {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(sec *section) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			its, err := s.extractItems(ctx, sec.title, cleanBody(sec.body.String()))
+			if err != nil {
+				atomic.AddInt32(&failed, 1)
+				slog.Warn("roadmap: section extraction failed", "section", sec.title, "err", err)
+				return
+			}
+			mu.Lock()
+			itemsBy[sec] = its
+			mu.Unlock()
+		}(sec)
+	}
+	wg.Wait()
+	if failed > 0 {
+		slog.Warn("roadmap: some sections degraded to a single leaf", "failed", failed, "of", len(leaves))
+	}
+
+	total := 0
+	add := func() bool { total++; return total <= maxItems }
+
+	if noHeadings {
+		var nodes []*treeNode
+		for _, t := range dedupeStr(itemsBy[root]) {
+			if !add() {
+				break
+			}
+			nodes = append(nodes, &treeNode{Title: t})
+		}
+		return nodes, total, nil
+	}
+
+	var build func(sec *section) *treeNode
+	build = func(sec *section) *treeNode {
+		if len(sec.children) > 0 {
+			n := &treeNode{Title: sec.title}
+			add()
+			for _, c := range sec.children {
+				n.Children = append(n.Children, build(c))
+			}
+			return n
+		}
+		its := dedupeStr(itemsBy[sec])
+		if len(its) > 0 {
+			n := &treeNode{Title: sec.title}
+			add()
+			for _, t := range its {
+				if !add() {
+					break
+				}
+				n.Children = append(n.Children, &treeNode{Title: t})
+			}
+			return n
+		}
+		add()
+		return &treeNode{Title: sec.title} // heading itself is the checkable leaf
+	}
+	var roots []*treeNode
+	for _, c := range root.children {
+		roots = append(roots, build(c))
+	}
+	return roots, total, nil
+}
+
+// persistTree writes the tree, deriving kind from structure. sort is a global
+// counter so a pre-order walk restores the exact display order.
+func (s *Service) persistTree(ctx context.Context, device, id uuid.UUID, roots []*treeNode, total int) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// A stack of the most recent id at each depth builds the parent links.
-	var stack []uuid.UUID
 	hlc := s.feed.Clock.Now()
 	sort := 0
-	for _, it := range items {
-		d := it.Depth
-		if d < 0 {
-			d = 0
+	var insert func(nodes []*treeNode, parent *uuid.UUID, depth int) error
+	insert = func(nodes []*treeNode, parent *uuid.UUID, depth int) error {
+		for _, n := range nodes {
+			kind := "leaf"
+			if len(n.Children) > 0 {
+				kind = "topic"
+			}
+			var newID uuid.UUID
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO roadmap_items (roadmap_id, parent_id, title, depth, sort, kind, hlc)
+				VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+				id, parent, trimTitle(n.Title), depth, sort, kind, hlc).Scan(&newID); err != nil {
+				return err
+			}
+			sort++
+			if len(n.Children) > 0 {
+				if err := insert(n.Children, &newID, depth+1); err != nil {
+					return err
+				}
+			}
 		}
-		if d > 5 {
-			d = 5
-		}
-		if len(stack) > d {
-			stack = stack[:d]
-		}
-		var parent *uuid.UUID
-		if len(stack) > 0 {
-			p := stack[len(stack)-1]
-			parent = &p
-		}
-		kind := it.Kind
-		if kind != "topic" && kind != "leaf" {
-			kind = "leaf"
-		}
-		var newID uuid.UUID
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO roadmap_items
-			  (roadmap_id, parent_id, title, depth, sort, kind, hlc)
-			VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-			id, parent, trimTitle(it.Title), d, sort, kind, hlc).Scan(&newID); err != nil {
-			return err
-		}
-		sort++
-		// This node becomes the parent for the next deeper one.
-		if len(stack) == d {
-			stack = append(stack, newID)
-		} else {
-			stack = stack[:d]
-			stack = append(stack, newID)
-		}
+		return nil
+	}
+	if err := insert(roots, nil, 0); err != nil {
+		return err
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE roadmaps SET status='ready', item_count=$2, updated_at=now() WHERE id=$1`,
-		id, len(items)); err != nil {
+		id, total); err != nil {
 		return err
 	}
 	if _, err := s.feed.Append(ctx, tx, "roadmap", id, "upsert", device); err != nil {
@@ -224,59 +331,15 @@ func (s *Service) persist(ctx context.Context, device, id uuid.UUID, items []gen
 	return tx.Commit(ctx)
 }
 
-// ------------------------------------------------------------ helpers
-
-var headingRe = regexp.MustCompile(`(?m)^#{1,6}\s+(.+?)\s*$`)
-
-// splitByHeading cuts the markdown into <=maxChars chunks at heading
-// boundaries, so a topic is never split across two model calls.
-func splitByHeading(md string, maxChars int) []string {
-	locs := headingRe.FindAllStringIndex(md, -1)
-	if len(locs) == 0 {
-		return hardWrap(md, maxChars)
-	}
-	// Sections start at each heading.
-	var sections []string
-	for i, loc := range locs {
-		end := len(md)
-		if i+1 < len(locs) {
-			end = locs[i+1][0]
-		}
-		sections = append(sections, md[loc[0]:end])
-	}
-	var chunks []string
-	var cur strings.Builder
-	for _, sec := range sections {
-		if cur.Len() > 0 && cur.Len()+len(sec) > maxChars {
-			chunks = append(chunks, cur.String())
-			cur.Reset()
-		}
-		if len(sec) > maxChars {
-			// A single huge section: hard-wrap it on its own.
-			for _, w := range hardWrap(sec, maxChars) {
-				chunks = append(chunks, w)
-			}
+func dedupeStr(in []string) []string {
+	seen := map[string]bool{}
+	out := in[:0:0]
+	for _, s := range in {
+		k := norm(s)
+		if k == "" || seen[k] {
 			continue
 		}
-		cur.WriteString(sec)
-	}
-	if cur.Len() > 0 {
-		chunks = append(chunks, cur.String())
-	}
-	return chunks
-}
-
-func hardWrap(s string, n int) []string {
-	var out []string
-	for len(s) > n {
-		cut := strings.LastIndex(s[:n], "\n")
-		if cut < n/2 {
-			cut = n
-		}
-		out = append(out, s[:cut])
-		s = s[cut:]
-	}
-	if strings.TrimSpace(s) != "" {
+		seen[k] = true
 		out = append(out, s)
 	}
 	return out
@@ -286,60 +349,6 @@ func norm(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = regexp.MustCompile(`[^a-z0-9 ]+`).ReplaceAllString(s, "")
 	return strings.Join(strings.Fields(s), " ")
-}
-
-// dedupe drops an item whose normalised title repeats one already kept at the
-// same depth -- the same topic arriving from two PDFs.
-func dedupe(items []genItem) []genItem {
-	seen := map[string]bool{}
-	out := items[:0:0]
-	for _, it := range items {
-		key := fmt.Sprintf("%d|%s", it.Depth, norm(it.Title))
-		if norm(it.Title) == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		out = append(out, it)
-	}
-	return out
-}
-
-// appendMissing is the mechanical coverage guarantee: any source heading not
-// already present as an item title is added, so the model cannot quietly drop a
-// topic. Added items sit under one clearly labelled group.
-func appendMissing(items []genItem, md string) []genItem {
-	have := map[string]bool{}
-	for _, it := range items {
-		have[norm(it.Title)] = true
-	}
-	var missing []string
-	for _, m := range headingRe.FindAllStringSubmatch(md, -1) {
-		h := strings.TrimSpace(m[1])
-		n := norm(h)
-		if n == "" || have[n] {
-			continue
-		}
-		// A heading is "covered" if any item title contains it or vice versa.
-		covered := false
-		for k := range have {
-			if strings.Contains(k, n) || strings.Contains(n, k) {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			have[n] = true
-			missing = append(missing, h)
-		}
-	}
-	if len(missing) == 0 {
-		return items
-	}
-	items = append(items, genItem{Title: "Also in the material", Kind: "topic", Depth: 0})
-	for _, h := range missing {
-		items = append(items, genItem{Title: h, Kind: "leaf", Depth: 1})
-	}
-	return items
 }
 
 func trimTitle(s string) string {
@@ -357,10 +366,39 @@ type chatMsg struct {
 	Content string `json:"content"`
 }
 
-// callMap asks the model to outline one chunk, retrying transient failures.
-// The last attempt drops strict json_schema for a plain json_object, in case
-// the schema mode is what a given provider is choking on.
-func (s *Service) callMap(ctx context.Context, chunk string) ([]genItem, error) {
+const itemSysPrompt = `You are given ONE section of a course's study material:
+its heading and its text. List the concrete, checkable things a student should
+revise for this section -- specific concepts, definitions, theorems, formulas,
+derivations, algorithms, methods or problem types.
+
+- Be exhaustive for this section, but use only what the text supports.
+- Each item is short, specific and checkable ("Derive the normal equations"),
+  not vague ("understand regression").
+- Do not repeat the section heading as an item.
+
+Respond ONLY with JSON: {"items":[{"title":"..."}]}`
+
+var itemSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"items": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"title": map[string]any{"type": "string"}},
+				"required":             []string{"title"},
+				"additionalProperties": false,
+			},
+		},
+	},
+	"required":             []string{"items"},
+	"additionalProperties": false,
+}
+
+// extractItems asks the model for the checklist items of one section, retrying
+// transient failures and relaxing json_schema to json_object on the last try.
+func (s *Service) extractItems(ctx context.Context, heading, body string) ([]string, error) {
+	user := "SECTION: " + heading + "\n\nTEXT:\n" + body
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
@@ -370,40 +408,53 @@ func (s *Service) callMap(ctx context.Context, chunk string) ([]genItem, error) 
 			case <-time.After(time.Duration(attempt) * 2 * time.Second):
 			}
 		}
-		items, err := s.callOnce(ctx, chunk, attempt < 2)
-		if err == nil {
-			return items, nil
+		content, err := s.chat(ctx, itemSysPrompt, user, attempt < 2)
+		if err != nil {
+			lastErr = err
+			continue
 		}
-		lastErr = err
+		var parsed struct {
+			Items []struct {
+				Title string `json:"title"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+			lastErr = fmt.Errorf("unparseable items: %w", err)
+			continue
+		}
+		var out []string
+		for _, it := range parsed.Items {
+			if t := strings.TrimSpace(it.Title); t != "" {
+				out = append(out, t)
+			}
+		}
+		return out, nil
 	}
 	return nil, lastErr
 }
 
-func (s *Service) callOnce(ctx context.Context, chunk string, strict bool) ([]genItem, error) {
+// chat is one OpenRouter chat call. It surfaces the real status/body (including
+// a 200-with-error envelope) instead of an opaque message.
+func (s *Service) chat(ctx context.Context, system, user string, strict bool) (string, error) {
 	var rf json.RawMessage
 	if strict {
 		b, _ := json.Marshal(map[string]any{
 			"type":        "json_schema",
-			"json_schema": map[string]any{"name": "outline", "strict": true, "schema": genSchema},
+			"json_schema": map[string]any{"name": "items", "strict": true, "schema": itemSchema},
 		})
 		rf = b
 	} else {
-		// Relaxed mode: ask for a JSON object; the prompt already specifies the
-		// exact shape.
 		rf = json.RawMessage(`{"type":"json_object"}`)
 	}
 	payload, _ := json.Marshal(map[string]any{
-		"model": s.model,
-		"messages": []chatMsg{
-			{Role: "system", Content: sysPrompt},
-			{Role: "user", Content: "MATERIAL:\n\n" + chunk},
-		},
+		"model":           s.model,
+		"messages":        []chatMsg{{Role: "system", Content: system}, {Role: "user", Content: user}},
 		"temperature":     0,
 		"response_format": rf,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -412,15 +463,13 @@ func (s *Service) callOnce(ctx context.Context, chunk string, strict bool) ([]ge
 
 	resp, err := s.http.Do(req)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openrouter status %d: %s", resp.StatusCode, trunc(string(raw), 300))
+		return "", fmt.Errorf("openrouter status %d: %s", resp.StatusCode, trunc(string(raw), 300))
 	}
-	// OpenRouter can return 200 with an error envelope (rate limit, provider
-	// timeout, content filter). Capture it instead of the old opaque message.
 	var env struct {
 		Choices []struct {
 			Message struct {
@@ -430,29 +479,22 @@ func (s *Service) callOnce(ctx context.Context, chunk string, strict bool) ([]ge
 		} `json:"choices"`
 		Error *struct {
 			Message string `json:"message"`
-			Code    any    `json:"code"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return nil, fmt.Errorf("openrouter 200 unparseable envelope: %s", trunc(string(raw), 300))
+		return "", fmt.Errorf("openrouter 200 unparseable envelope: %s", trunc(string(raw), 300))
 	}
 	if env.Error != nil {
-		return nil, fmt.Errorf("openrouter error: %s", env.Error.Message)
+		return "", fmt.Errorf("openrouter error: %s", env.Error.Message)
 	}
 	if len(env.Choices) == 0 {
-		return nil, fmt.Errorf("openrouter 200 with no choices: %s", trunc(string(raw), 300))
+		return "", fmt.Errorf("openrouter 200 with no choices: %s", trunc(string(raw), 300))
 	}
 	content := strings.TrimSpace(env.Choices[0].Message.Content)
 	if content == "" {
-		return nil, fmt.Errorf("openrouter 200 empty content (finish=%s)", env.Choices[0].FinishReason)
+		return "", fmt.Errorf("openrouter 200 empty content (finish=%s)", env.Choices[0].FinishReason)
 	}
-	var parsed struct {
-		Items []genItem `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return nil, fmt.Errorf("unparseable outline: %w", err)
-	}
-	return parsed.Items, nil
+	return content, nil
 }
 
 func trunc(s string, n int) string {

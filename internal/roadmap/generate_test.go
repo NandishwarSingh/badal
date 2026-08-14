@@ -2,59 +2,43 @@ package roadmap
 
 import "testing"
 
-func TestSplitByHeading(t *testing.T) {
-	md := "# A\n" + rep("x", 5000) + "\n## B\n" + rep("y", 5000) + "\n## C\nshort"
-	chunks := splitByHeading(md, 8000)
-	if len(chunks) < 2 {
-		t.Fatalf("expected splitting, got %d chunks", len(chunks))
+func TestParseSectionsNesting(t *testing.T) {
+	md := "# Unit 1\nintro\n## Topic A\nbody a\n## Topic B\nbody b\n# Unit 2\n### Deep\nskipped a level"
+	root := parseSections(md)
+	if len(root.children) != 2 {
+		t.Fatalf("want 2 top-level units, got %d", len(root.children))
 	}
-	// every heading must survive somewhere
-	joined := ""
-	for _, c := range chunks {
-		joined += c
+	u1 := root.children[0]
+	if u1.title != "Unit 1" || len(u1.children) != 2 {
+		t.Fatalf("Unit 1 should have 2 subtopics, got %d", len(u1.children))
 	}
-	for _, h := range []string{"# A", "## B", "## C"} {
-		if !contains(joined, h) {
-			t.Fatalf("heading %q lost in chunking", h)
-		}
+	if u1.children[0].title != "Topic A" {
+		t.Fatalf("first subtopic wrong: %q", u1.children[0].title)
 	}
-}
-
-func TestDedupe(t *testing.T) {
-	in := []genItem{
-		{Title: "Linear Regression", Kind: "topic", Depth: 0},
-		{Title: "linear regression", Kind: "topic", Depth: 0}, // dup, same depth
-		{Title: "Gradient Descent", Kind: "leaf", Depth: 1},
-	}
-	out := dedupe(in)
-	if len(out) != 2 {
-		t.Fatalf("dedupe: want 2, got %d", len(out))
+	// Level skip (# then ###) must not panic and must still nest under Unit 2.
+	u2 := root.children[1]
+	if u2.title != "Unit 2" || len(u2.children) != 1 || u2.children[0].title != "Deep" {
+		t.Fatalf("level-skip nesting wrong: %+v", u2)
 	}
 }
 
-func TestAppendMissing(t *testing.T) {
-	md := "# Bayes Theorem\ntext\n## Naive Bayes\nmore\n## Hidden Markov Models\nx"
-	items := []genItem{{Title: "Bayes Theorem", Kind: "topic", Depth: 0}, {Title: "Naive Bayes", Kind: "leaf", Depth: 1}}
-	out := appendMissing(items, md)
-	// HMM was missing -> must be appended
-	found := false
-	for _, it := range out {
-		if norm(it.Title) == norm("Hidden Markov Models") {
-			found = true
-		}
+func TestParseSectionsNoHeadings(t *testing.T) {
+	root := parseSections("just some text\nno headings here")
+	if len(root.children) != 0 {
+		t.Fatalf("expected no heading children")
 	}
-	if !found {
-		t.Fatalf("coverage check dropped a missing heading")
+	if !meaningful(cleanBody(root.body.String())) {
+		t.Fatalf("root body should be meaningful for the flat fallback")
 	}
 }
 
-func rep(s string, n int) string {
-	out := ""
-	for i := 0; i < n; i++ {
-		out += s
+func TestCleanBodyStripsComments(t *testing.T) {
+	got := cleanBody("<!-- source: x.pdf -->\nReal content here indeed yes")
+	if got == "" || contains(got, "source:") {
+		t.Fatalf("comment not stripped: %q", got)
 	}
-	return out
 }
+
 func contains(h, n string) bool {
 	for i := 0; i+len(n) <= len(h); i++ {
 		if h[i:i+len(n)] == n {
