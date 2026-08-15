@@ -36,7 +36,6 @@ the running order.
 | Voice in — hold to speak, Whisper on the Mac, nothing leaves it | `cmd/badal-forge/transcribe.go`, `Mic.svelte` |
 | Voice out — Kokoro over a websocket relay, browser fallback, barge-in | `internal/voice`, `deploy/mac/badal-tts.py`, `speech.svelte.js` |
 | Timetable — recurring weekly classes + study blocks, live now/next | `internal/timetable`, `web/src/routes/timetable` |
-| Roadmaps — subject PDFs → anydoc → coverage-checked LLM → checkable tree | `internal/anydoc`, `internal/roadmap`, `web/src/routes/roadmaps` |
 
 ---
 

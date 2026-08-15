@@ -2,15 +2,19 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { isSignedIn } from '$lib/api.js';
+	import { isSignedIn, wasSignedIn, rememberSignedIn } from '$lib/api.js';
 	import { authState } from '$lib/auth.js';
 	import { requestPersistence } from '$lib/store.js';
 	import { state as sync, startAutoSync, run } from '$lib/sync.svelte.js';
 	import { toasts, dismiss } from '$lib/toast.svelte.js';
 
 	let { children } = $props();
-	let ready = $state(false);
-	let authed = $state(false);
+	// Both start from the last known answer rather than from false. The server
+	// is still asked on mount, but the shell is on screen before it replies --
+	// with the whole UI precached, that round trip was the only thing left
+	// making a cold open look like a page load.
+	let ready = $state(true);
+	let authed = $state(wasSignedIn());
 
 	const tabs = [
 		// Five tabs, and they stop growing. Settings moved to the top bar so
@@ -25,17 +29,26 @@
 
 
 	onMount(async () => {
+		// Start the offline machinery on the local answer, so a cold open is
+		// syncing before the server has said anything.
+		if (authed) {
+			await requestPersistence();
+			startAutoSync();
+		}
 		try {
 			const s = await authState();
 			authed = s.signed_in || isSignedIn();
+			rememberSignedIn(authed);
 		} catch {
-			authed = isSignedIn();
+			// Offline. The remembered answer stands -- treating "cannot reach
+			// the server" as "signed out" would empty the app every time the
+			// train goes into a tunnel.
+			authed = wasSignedIn();
 		}
-		ready = true;
-		if (!authed) return;
-		await requestPersistence();
-		startAutoSync();
-		if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+		if (authed) {
+			await requestPersistence();
+			startAutoSync();
+		}
 	});
 
 	const active = (h) => (h === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(h));

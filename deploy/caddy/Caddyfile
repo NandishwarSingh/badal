@@ -28,7 +28,7 @@ badal.nandishwarsingh.com {
 		file_server {
 			precompressed br gzip
 		}
-		header /sw.js Cache-Control "no-cache"
+		header /service-worker.js Cache-Control "no-cache"
 		header /manifest.webmanifest Cache-Control "no-cache"
 		header /_app/immutable/* Cache-Control "public, max-age=31536000, immutable"
 	}

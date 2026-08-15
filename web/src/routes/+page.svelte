@@ -187,10 +187,6 @@
 		</span>
 	</h1>
 	<span class="spacer"></span>
-	<!-- Roadmaps: subject checklists built from uploaded PDFs. -->
-	<button class="iconbtn" onclick={() => goto('/roadmaps')} aria-label="Roadmaps">
-		<svg viewBox="0 0 24 24"><path d="M5 5h14 M5 12h14 M5 19h14 M2.5 5h.01 M2.5 12h.01 M2.5 19h.01" /></svg>
-	</button>
 	<!-- Timetable: the recurring week lives on its own page, reached here. -->
 	<button class="iconbtn" onclick={() => goto('/timetable')} aria-label="Timetable">
 		<svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z M12 8v4.4l3 1.8" /></svg>

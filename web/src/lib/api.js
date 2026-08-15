@@ -3,6 +3,7 @@
 
 const TOKEN_KEY = "badal.token";
 const BASE_KEY = "badal.base";
+const AUTHED_KEY = "badal.authed";
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || "";
@@ -29,9 +30,22 @@ export function echo() {
 }
 export function clearCreds() {
   localStorage.removeItem(TOKEN_KEY);
+  rememberSignedIn(false);
 }
 export function isSignedIn() {
   return !!getToken();
+}
+
+// A hint, not an authority. A passkey session is an httpOnly cookie script
+// cannot read, so only the server truly knows -- but blocking the whole shell
+// on that round trip is what made every app open feel like a page load. Draw
+// from the last known answer, then let the server correct it.
+export function wasSignedIn() {
+  return localStorage.getItem(AUTHED_KEY) === "1" || isSignedIn();
+}
+export function rememberSignedIn(yes) {
+  if (yes) localStorage.setItem(AUTHED_KEY, "1");
+  else localStorage.removeItem(AUTHED_KEY);
 }
 
 export class ApiError extends Error {
@@ -200,42 +214,6 @@ export const Tasks = {
   snooze: (id, minutes = 10) =>
     api(`/v1/tasks/${id}/snooze?minutes=${minutes}`, { method: "POST" }),
   del: (id) => api(`/v1/tasks/${id}`, { method: "DELETE" }),
-};
-
-// Roadmaps: subject PDFs turned into a checkable tree. Create is multipart
-// (the files ride along), so it bypasses the JSON helper; everything else is
-// ordinary JSON.
-export const Roadmaps = {
-  list: () => api("/v1/roadmaps"),
-  get: (id) => api(`/v1/roadmaps/${id}`),
-  itemState: (id, itemId, state) =>
-    api(`/v1/roadmaps/${id}/items/${itemId}/state?state=${state}`, {
-      method: "POST",
-    }),
-  del: (id) => api(`/v1/roadmaps/${id}`, { method: "DELETE" }),
-  // Upload one or more files under a subject; the server parses and generates
-  // synchronously, so this awaits the finished roadmap.
-  create: async (subject, title, files) => {
-    const fd = new FormData();
-    fd.append("subject", subject);
-    if (title) fd.append("title", title);
-    for (const f of files) fd.append("files", f, f.name);
-    const res = await fetch(getBase() + "/v1/roadmaps", {
-      method: "POST",
-      credentials: "include",
-      headers: { Authorization: "Bearer " + getToken() },
-      body: fd,
-    });
-    const text = await res.text();
-    let json = null;
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch {
-      /* non-JSON */
-    }
-    if (!res.ok) throw new ApiError(res.status, json, getBase() + "/v1/roadmaps");
-    return json;
-  },
 };
 
 // Timetable: the recurring weekly schedule. Slot ids are generated on the

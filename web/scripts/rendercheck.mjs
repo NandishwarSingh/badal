@@ -15,7 +15,7 @@ globalThis.document = dom.window.document;
 globalThis.Node = dom.window.Node;
 globalThis.DocumentFragment = dom.window.DocumentFragment;
 
-const { render } = await import('./src/lib/markdown.js');
+const { render } = await import('../src/lib/markdown.js');
 const body = SAMPLE;
 const html = render(body);
 
@@ -31,8 +31,11 @@ const checks = [
   ['task unchecked',/<input disabled=""\s+type="checkbox">\s*Task that is not/],
   ['table wrapper', /<div class="tablewrap"><table>/],
   ['table header',  /<th[^>]*>Store<\/th>/],
-  ['inline math',   /<span class="math math-inline">[^<]*varphi/],
-  ['block math',    /<div class="math math-block">[^<]*operatorname/],
+  // The TeX rides in data-tex and KaTeX typesets it in the browser, so the
+  // element itself is empty here. Asserting on its text content was checking
+  // for a shape the renderer stopped emitting.
+  ['inline math',   /<span class="math math-inline" data-tex="[^"]*varphi/],
+  ['block math',    /<div class="math math-block" data-tex="[^"]*operatorname/],
   ['prices intact', /\$5 and coffee \$10/],
   ['mermaid',       /<pre class="mermaid-src">flowchart TD/],
   ['mermaid arrow', /A\[New mail arrives\] --&gt; B/],

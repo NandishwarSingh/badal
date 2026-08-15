@@ -1,7 +1,7 @@
 <script>
 	import Icon from '$lib/Icon.svelte';
 	import { onMount } from 'svelte';
-	import { getBase, getToken, setCreds, clearCreds, api, echo } from '$lib/api.js';
+	import { getBase, getToken, setCreds, clearCreds, rememberSignedIn, api, echo } from '$lib/api.js';
 	import { cache, outbox, requestPersistence } from '$lib/store.js';
 	import { state as sync, run, startAutoSync } from '$lib/sync.svelte.js';
 	import {
@@ -59,6 +59,7 @@
 		err = ''; busy = 'login';
 		try {
 			await loginWithPasskey();
+			rememberSignedIn(true);
 			toast('Signed in');
 			await requestPersistence(); startAutoSync(); await refresh(); await run();
 		} catch (e) { err = e.message || 'Sign-in failed.'; }
@@ -72,6 +73,7 @@
 			enrolSecret = '';
 			toast('Passkey created');
 			if (!auth.signed_in) await loginWithPasskey();
+			rememberSignedIn(true);
 			await requestPersistence(); startAutoSync(); await refresh(); await run();
 		} catch (e) { err = e.message || 'Could not create a passkey.'; }
 		finally { busy = ''; }
@@ -98,6 +100,7 @@
 			if (!clean) throw new Error('Token looked empty after cleaning.');
 			await api('/v1/notes');
 			tokenSignedIn = true; token = '';
+			rememberSignedIn(true);
 			toast('Signed in');
 			await requestPersistence(); startAutoSync(); await refresh();
 		} catch (e) {

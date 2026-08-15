@@ -209,8 +209,15 @@ async function pull() {
   if (c) state.conflicts = c.count || 0;
 }
 
+let autoSyncStarted = false;
+
 export function startAutoSync() {
   if (typeof window === "undefined") return;
+  // Idempotent: the layout starts sync from the remembered session and again
+  // once the server confirms it, and a second set of listeners plus a second
+  // 60-second timer would just double every poll.
+  if (autoSyncStarted) return;
+  autoSyncStarted = true;
   const on = () => {
     state.online = true;
     void run();
